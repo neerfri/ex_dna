@@ -55,6 +55,7 @@ defmodule ExDNA.Reporter.HTMLTest do
     assert html =~ "lib/bar.ex:20"
     assert html =~ ":world"
     assert html =~ "42 nodes"
+    assert html =~ "file://"
   end
 
   test "renders Type II and Type III badges" do

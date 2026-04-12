@@ -82,8 +82,9 @@ defmodule ExDNA.Reporter.HTML do
       Enum.map_join(clone.fragments, "\n", fn frag ->
         path = relative_path(frag.file)
         label = if frag.line > 0, do: "#{path}:#{frag.line}", else: path
+        href = file_uri(frag.file, frag.line)
 
-        ~s(<a class="location" href="#">#{escape(label)}</a>)
+        ~s(<a class="location" href="#{href}">#{escape(label)}</a>)
       end)
 
     snippets_list = Clone.source_snippets(clone)
@@ -183,6 +184,12 @@ defmodule ExDNA.Reporter.HTML do
 
   defp format_similarity(nil), do: ""
   defp format_similarity(sim), do: "  #{Float.round(sim * 100, 1)}%"
+
+  defp file_uri(path, line) do
+    abs = Path.expand(path)
+    base = "file://#{abs}"
+    if line > 0, do: "#{base}:#{line}", else: base
+  end
 
   defp relative_path(path) do
     case File.cwd() do
