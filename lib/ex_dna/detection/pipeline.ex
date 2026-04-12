@@ -16,7 +16,8 @@ defmodule ExDNA.Detection.Pipeline do
 
     paths
     |> Enum.flat_map(&expand_path/1)
-    |> Enum.reject(fn file -> MapSet.member?(ignored_files, Path.expand(file)) end)
+    |> Enum.map(&Path.expand/1)
+    |> Enum.reject(&MapSet.member?(ignored_files, &1))
     |> Enum.uniq()
     |> Enum.sort()
   end
