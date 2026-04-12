@@ -4,14 +4,13 @@ defmodule ExDNA.AST.Fingerprint do
 
   Every subtree whose *mass* (node count) meets the threshold is hashed.
   Two normalized ASTs with the same hash are structurally identical clones.
-  Each fragment also carries a characteristic vector for fast fuzzy comparison.
 
   Additionally, sliding windows over sibling sequences (consecutive statements
   in a block) are fingerprinted to catch clones that span multiple statements
   but don't align to a single subtree boundary.
   """
 
-  alias ExDNA.AST.{CharacteristicVector, Normalizer}
+  alias ExDNA.AST.Normalizer
 
   @type hash :: binary()
   @type fragment :: %{
@@ -19,8 +18,7 @@ defmodule ExDNA.AST.Fingerprint do
           mass: pos_integer(),
           ast: Macro.t(),
           file: String.t(),
-          line: pos_integer(),
-          vector: %{atom() => pos_integer()}
+          line: pos_integer()
         }
 
   @max_window_size 6
@@ -29,7 +27,7 @@ defmodule ExDNA.AST.Fingerprint do
   Walk an AST and return all subtree fragments that meet `min_mass`.
 
   Each fragment contains the normalized hash, mass, original AST (for display),
-  source file, starting line number, and characteristic vector.
+  source file, and starting line number.
   """
   @spec fragments(Macro.t(), String.t(), pos_integer(), keyword()) :: [fragment()]
   def fragments(ast, file, min_mass, opts \\ []) do
@@ -74,8 +72,7 @@ defmodule ExDNA.AST.Fingerprint do
           mass: mass,
           ast: node,
           file: file,
-          line: line,
-          vector: CharacteristicVector.compute(node)
+          line: line
         }
 
         {node, [frag | acc]}
@@ -133,8 +130,7 @@ defmodule ExDNA.AST.Fingerprint do
         mass: combined_mass,
         ast: synthetic,
         file: file,
-        line: first_line(window),
-        vector: CharacteristicVector.compute(synthetic)
+        line: first_line(window)
       }
 
       [frag | acc]

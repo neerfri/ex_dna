@@ -88,7 +88,7 @@ defmodule ExDNA.Reporter.HTML do
 
   defp file_uri(path, line) do
     abs = Path.expand(path)
-    if line > 0, do: "file://#{abs}:#{line}", else: "file://#{abs}"
+    if line > 0, do: "file://#{abs}#L#{line}", else: "file://#{abs}"
   end
 
   defp relative_path(path) do

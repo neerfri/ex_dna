@@ -46,6 +46,10 @@ defmodule ExDNA.AST.CharacteristicVector do
     Map.update(vec, :variable, 1, &(&1 + 1))
   end
 
+  defp walk({key, value}, vec) when is_atom(key) do
+    walk(value, vec)
+  end
+
   defp walk({left, right}, vec) do
     walk(right, walk(left, vec))
   end

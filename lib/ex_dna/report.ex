@@ -24,6 +24,7 @@ defmodule ExDNA.Report do
 
   defstruct [:config, clones: [], stats: %{}]
 
+  @spec new([Clone.t()], Config.t()) :: t()
   @spec new([Clone.t()], Config.t(), non_neg_integer()) :: t()
   def new(clones, config, detection_time_ms \\ 0) do
     files_analyzed = length(Pipeline.collect_files(config))

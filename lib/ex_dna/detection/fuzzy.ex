@@ -9,11 +9,12 @@ defmodule ExDNA.Detection.Fuzzy do
 
   Detection pipeline:
   1. Filter out fragments already covered by exact clones
-  2. Generate LSH signatures from characteristic vectors
-  3. Group fragments into buckets by LSH band
-  4. Only compare pairs that share at least one bucket (candidate pairs)
-  5. Verify candidates with cosine similarity pre-filter
-  6. Final verification with tree edit distance
+  2. Compute characteristic vectors for remaining candidates
+  3. Generate LSH signatures from characteristic vectors
+  4. Group fragments into buckets by LSH band
+  5. Only compare pairs that share at least one bucket (candidate pairs)
+  6. Verify candidates with cosine similarity pre-filter
+  7. Final verification with tree edit distance
   """
 
   alias ExDNA.AST.{CharacteristicVector, EditDistance, Normalizer}
@@ -23,6 +24,7 @@ defmodule ExDNA.Detection.Fuzzy do
   @num_hashes 64
   @band_size 8
   @cosine_pre_filter 0.5
+  @max_bucket_size 50
 
   @doc """
   Find Type-III clones from a list of fragments at the given similarity threshold.
@@ -61,15 +63,20 @@ defmodule ExDNA.Detection.Fuzzy do
   end
 
   defp find_similar_pairs_lsh(fragments, min_similarity) do
+    vectorized =
+      Enum.map(fragments, fn frag ->
+        Map.put_new_lazy(frag, :vector, fn -> CharacteristicVector.compute(frag.ast) end)
+      end)
+
     all_keys =
-      fragments
+      vectorized
       |> Enum.flat_map(fn f -> Map.keys(f.vector) end)
       |> MapSet.new()
 
     hyperplanes = CharacteristicVector.generate_hyperplanes(all_keys, @num_hashes)
 
     indexed_fragments =
-      fragments
+      vectorized
       |> Enum.with_index()
       |> Enum.map(fn {frag, idx} ->
         sig = CharacteristicVector.lsh_signature(frag.vector, hyperplanes)
@@ -119,12 +126,13 @@ defmodule ExDNA.Detection.Fuzzy do
   end
 
   defp pairs_from_bucket(group) when length(group) < 2, do: []
+  defp pairs_from_bucket(group) when length(group) > @max_bucket_size, do: []
 
   defp pairs_from_bucket(group) do
     for {_fa, i, _sa} <- group,
         {_fb, j, _sb} <- group,
         j > i do
-      {min(i, j), max(i, j)}
+      {i, j}
     end
   end
 

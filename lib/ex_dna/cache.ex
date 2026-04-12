@@ -2,7 +2,7 @@ defmodule ExDNA.Cache do
   @moduledoc """
   Persistent cache for fingerprinted AST fragments.
 
-  Stores `%{file_path => %{mtime: integer(), fragments: [fragment]}}` to disk
+  Stores `%{file_path => %{mtime: integer(), fragments: [fragment], ast: Macro.t() | nil}}` to disk
   using `:erlang.term_to_binary/1`. On subsequent runs, only files whose mtime
   has changed need to be re-parsed and fingerprinted.
   """
@@ -59,7 +59,7 @@ defmodule ExDNA.Cache do
   Merge fresh fragments into the cache, dropping entries for files
   that no longer exist on disk.
   """
-  @spec merge(entries(), %{String.t() => [map()]}, [String.t()]) :: entries()
+  @spec merge(entries(), entries(), [String.t()]) :: entries()
   def merge(cached, fresh_by_file, all_files) do
     valid_set = MapSet.new(all_files)
 
