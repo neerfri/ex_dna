@@ -21,7 +21,7 @@ defmodule ExDNA.AST.Fingerprint do
           line: pos_integer()
         }
 
-  @max_window_size 6
+  @max_window_size 4
 
   @doc """
   Walk an AST and return all subtree fragments that meet `min_mass`.
@@ -44,7 +44,12 @@ defmodule ExDNA.AST.Fingerprint do
         walk_acc(child, file, min_mass, norm_opts, excluded, a)
       end)
 
-    acc = sibling_windows(args, file, min_mass, norm_opts, acc)
+    acc =
+      if module_body?(args) do
+        sibling_windows(args, file, min_mass, norm_opts, acc)
+      else
+        acc
+      end
 
     {node, acc}
   end
@@ -102,6 +107,17 @@ defmodule ExDNA.AST.Fingerprint do
   defp walk_acc(node, file, min_mass, norm_opts, excluded, acc) do
     {_, acc} = walk(node, file, min_mass, norm_opts, excluded, acc)
     acc
+  end
+
+  @module_level_forms [:def, :defp, :defmacro, :defmacrop]
+
+  defp module_body?(children) when length(children) > 30, do: false
+
+  defp module_body?(children) do
+    Enum.any?(children, fn
+      {form, _, _} when form in @module_level_forms -> true
+      _ -> false
+    end)
   end
 
   defp sibling_windows(children, _file, _min_mass, _norm_opts, acc) when length(children) < 2,

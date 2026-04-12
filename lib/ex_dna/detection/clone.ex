@@ -51,7 +51,7 @@ defmodule ExDNA.Detection.Clone do
 
     snippets =
       Enum.map(frags, fn f ->
-        f.ast |> unwrap_grouped_def() |> Macro.to_string()
+        f.ast |> unwrap_grouped_def() |> safe_to_string()
       end)
 
     %__MODULE__{
@@ -61,6 +61,12 @@ defmodule ExDNA.Detection.Clone do
       fragments: locations,
       source_snippets: snippets
     }
+  end
+
+  defp safe_to_string(ast) do
+    Macro.to_string(ast)
+  rescue
+    _ -> inspect(ast)
   end
 
   defp unwrap_grouped_def(ast) do

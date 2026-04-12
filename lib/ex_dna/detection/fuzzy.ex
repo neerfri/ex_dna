@@ -1,30 +1,18 @@
 defmodule ExDNA.Detection.Fuzzy do
   @moduledoc """
-  Type-III (near-miss) clone detection using characteristic vectors and LSH.
+  Type-III (near-miss) clone detection using characteristic vectors.
 
-  Uses DECKARD-style characteristic vectors to quickly identify candidate
-  clone pairs, then verifies with tree edit distance. This replaces the
-  previous O(n²) pairwise comparison with LSH-bucketed candidate generation,
-  reducing comparison count dramatically for large codebases.
-
-  Detection pipeline:
-  1. Filter out fragments already covered by exact clones
-  2. Compute characteristic vectors for remaining candidates
-  3. Generate LSH signatures from characteristic vectors
-  4. Group fragments into buckets by LSH band
-  5. Only compare pairs that share at least one bucket (candidate pairs)
-  6. Verify candidates with cosine similarity pre-filter
-  7. Final verification with tree edit distance
+  Uses DECKARD-style characteristic vectors for fast candidate pre-filtering,
+  then verifies with tree edit distance. Fragments are grouped by mass range
+  to limit comparisons, then cosine similarity on structural vectors prunes
+  pairs before expensive tree comparison.
   """
 
   alias ExDNA.AST.{CharacteristicVector, EditDistance, Normalizer}
   alias ExDNA.Detection.Clone
 
   @mass_tolerance 0.3
-  @num_hashes 64
-  @band_size 8
-  @cosine_pre_filter 0.5
-  @max_bucket_size 50
+  @cosine_threshold 0.7
 
   @doc """
   Find Type-III clones from a list of fragments at the given similarity threshold.
@@ -34,110 +22,53 @@ defmodule ExDNA.Detection.Fuzzy do
   """
   @spec detect([map()], float(), MapSet.t()) :: [Clone.t()]
   def detect(fragments, min_similarity, exact_hashes) do
-    candidates =
-      fragments
-      |> Enum.reject(fn f -> MapSet.member?(exact_hashes, f.hash) end)
-      |> Enum.sort_by(& &1.mass, :desc)
-
-    if length(candidates) <= 200 do
-      find_similar_pairs_brute(candidates, min_similarity)
-    else
-      find_similar_pairs_lsh(candidates, min_similarity)
-    end
+    fragments
+    |> Enum.reject(fn f -> MapSet.member?(exact_hashes, f.hash) end)
+    |> attach_vectors()
+    |> group_by_mass_bucket()
+    |> Enum.flat_map(fn bucket -> find_pairs_in_bucket(bucket, min_similarity) end)
     |> deduplicate_pairs()
     |> Enum.map(&pair_to_clone/1)
   end
 
-  defp find_similar_pairs_brute(fragments, min_similarity) do
-    indexed = Enum.with_index(fragments)
+  defp attach_vectors(fragments) do
+    Enum.map(fragments, fn frag ->
+      Map.put(frag, :vector, CharacteristicVector.compute(frag.ast))
+    end)
+  end
+
+  defp group_by_mass_bucket(fragments) do
+    fragments
+    |> Enum.sort_by(& &1.mass, :desc)
+    |> Enum.chunk_by(fn f -> div(f.mass, 10) end)
+    |> merge_adjacent_buckets()
+  end
+
+  defp merge_adjacent_buckets([]), do: []
+  defp merge_adjacent_buckets([only]), do: [only]
+
+  defp merge_adjacent_buckets([bucket_a, bucket_b | rest]) do
+    merged = bucket_a ++ bucket_b
+    [merged | merge_adjacent_buckets([bucket_b | rest])]
+  end
+
+  defp find_pairs_in_bucket(bucket, min_similarity) do
+    indexed = Enum.with_index(bucket)
 
     for {frag_a, i} <- indexed,
         {frag_b, j} <- indexed,
         j > i,
         mass_compatible?(frag_a, frag_b),
         not same_location?(frag_a, frag_b),
+        cosine_compatible?(frag_a, frag_b),
         sim = compute_similarity(frag_a, frag_b),
         sim >= min_similarity do
       {frag_a, frag_b, sim}
     end
   end
 
-  defp find_similar_pairs_lsh(fragments, min_similarity) do
-    vectorized =
-      Enum.map(fragments, fn frag ->
-        Map.put_new_lazy(frag, :vector, fn -> CharacteristicVector.compute(frag.ast) end)
-      end)
-
-    all_keys =
-      vectorized
-      |> Enum.flat_map(fn f -> Map.keys(f.vector) end)
-      |> MapSet.new()
-
-    hyperplanes = CharacteristicVector.generate_hyperplanes(all_keys, @num_hashes)
-
-    indexed_fragments =
-      vectorized
-      |> Enum.with_index()
-      |> Enum.map(fn {frag, idx} ->
-        sig = CharacteristicVector.lsh_signature(frag.vector, hyperplanes)
-        {frag, idx, sig}
-      end)
-
-    candidate_pairs = lsh_candidate_pairs(indexed_fragments)
-
-    frag_by_idx = Map.new(indexed_fragments, fn {frag, idx, _sig} -> {idx, frag} end)
-
-    candidate_pairs
-    |> Task.async_stream(
-      fn {i, j} ->
-        frag_a = Map.fetch!(frag_by_idx, i)
-        frag_b = Map.fetch!(frag_by_idx, j)
-
-        with true <- mass_compatible?(frag_a, frag_b),
-             false <- same_location?(frag_a, frag_b),
-             true <- cosine_pre_filter?(frag_a, frag_b),
-             sim when sim >= min_similarity <- compute_similarity(frag_a, frag_b) do
-          {frag_a, frag_b, sim}
-        else
-          _ -> nil
-        end
-      end,
-      max_concurrency: System.schedulers_online(),
-      ordered: false
-    )
-    |> Enum.flat_map(fn
-      {:ok, nil} -> []
-      {:ok, result} -> [result]
-    end)
-  end
-
-  defp lsh_candidate_pairs(indexed_fragments) do
-    num_bands = div(@num_hashes, @band_size)
-
-    0..(num_bands - 1)
-    |> Enum.flat_map(fn band_idx ->
-      start = band_idx * @band_size
-
-      indexed_fragments
-      |> Enum.group_by(fn {_frag, _idx, sig} -> Enum.slice(sig, start, @band_size) end)
-      |> Enum.flat_map(fn {_band_hash, group} -> pairs_from_bucket(group) end)
-    end)
-    |> Enum.uniq()
-  end
-
-  defp pairs_from_bucket(group) when length(group) < 2, do: []
-  defp pairs_from_bucket(group) when length(group) > @max_bucket_size, do: []
-
-  defp pairs_from_bucket(group) do
-    for {_fa, i, _sa} <- group,
-        {_fb, j, _sb} <- group,
-        j > i do
-      {i, j}
-    end
-  end
-
-  defp cosine_pre_filter?(frag_a, frag_b) do
-    CharacteristicVector.cosine_similarity(frag_a.vector, frag_b.vector) >= @cosine_pre_filter
+  defp cosine_compatible?(frag_a, frag_b) do
+    CharacteristicVector.cosine_similarity(frag_a.vector, frag_b.vector) >= @cosine_threshold
   end
 
   defp mass_compatible?(a, b) do

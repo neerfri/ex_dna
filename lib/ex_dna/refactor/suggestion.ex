@@ -58,7 +58,7 @@ defmodule ExDNA.Refactor.Suggestion do
       kind: :extract_macro,
       name: macro_name,
       params: param_names,
-      body: frag_a.ast |> humanize_ast() |> Macro.to_string(),
+      body: frag_a.ast |> humanize_ast() |> safe_to_string(),
       occurrence_count: length(frags),
       call_sites: Enum.map(frags, fn frag -> %{file: frag.file, line: frag.line, call: ""} end)
     }
@@ -77,9 +77,9 @@ defmodule ExDNA.Refactor.Suggestion do
 
     body =
       if params == [] do
-        pattern |> humanize_ast() |> Macro.to_string()
+        pattern |> humanize_ast() |> safe_to_string()
       else
-        pattern |> rename_holes(holes) |> humanize_ast() |> Macro.to_string()
+        pattern |> rename_holes(holes) |> humanize_ast() |> safe_to_string()
       end
 
     param_names = Enum.map(holes, fn hole -> hole.var |> rename_hole() end)
@@ -91,7 +91,7 @@ defmodule ExDNA.Refactor.Suggestion do
         args =
           Enum.map_join(holes, ", ", fn hole ->
             value = Enum.at(hole.values, min(idx, 1))
-            value |> humanize_ast() |> Macro.to_string()
+            value |> humanize_ast() |> safe_to_string()
           end)
 
         call =
@@ -280,6 +280,12 @@ defmodule ExDNA.Refactor.Suggestion do
     |> Atom.to_string()
     |> String.replace("hole", "arg")
     |> String.to_atom()
+  end
+
+  defp safe_to_string(ast) do
+    Macro.to_string(ast)
+  rescue
+    _ -> inspect(ast)
   end
 
   defp humanize_ast(ast) do
