@@ -94,7 +94,7 @@ if Code.ensure_loaded?(Credo.Check) do
     end
 
     defp append_issues(clone, exec, source_file_index, params) do
-      for {frag, _snippet} <- Enum.zip(clone.fragments, clone.source_snippets),
+      for frag <- clone.fragments,
           source_file = source_file_index[frag.file],
           source_file != nil,
           others = other_locations(clone.fragments, frag),

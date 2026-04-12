@@ -5,7 +5,7 @@ defmodule ExDNA.Reporter.Console do
   Inspired by Credo's output style — scannable by humans and parseable by LLMs.
   """
 
-  alias ExDNA.Detection.Grouper
+  alias ExDNA.Detection.{Clone, Grouper}
   alias ExDNA.Report
 
   @behaviour ExDNA.Reporter
@@ -83,7 +83,7 @@ defmodule ExDNA.Reporter.Console do
       IO.puts(["┃   ", IO.ANSI.cyan(), location, IO.ANSI.reset()])
     end)
 
-    snippet = List.first(clone.source_snippets) || ""
+    snippet = clone |> Clone.source_snippets() |> List.first() || ""
     lines = String.split(snippet, "\n")
     show = Enum.take(lines, @max_snippet_lines)
 

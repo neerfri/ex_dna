@@ -45,7 +45,7 @@ defmodule ExDNA.Report do
   defp compute_stats(clones, files_analyzed, detection_time_ms) do
     duplicated_lines =
       clones
-      |> Enum.flat_map(& &1.source_snippets)
+      |> Enum.flat_map(&Clone.source_snippets/1)
       |> Enum.map(fn snippet -> snippet |> String.split("\n") |> length() end)
       |> Enum.sum()
 

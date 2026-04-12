@@ -5,6 +5,8 @@ defmodule ExDNA.Reporter.JSON do
   Designed for CI pipelines and LLM consumption.
   """
 
+  alias ExDNA.Detection.Clone
+
   @behaviour ExDNA.Reporter
 
   @impl true
@@ -27,7 +29,7 @@ defmodule ExDNA.Reporter.JSON do
         Enum.map(clone.fragments, fn f ->
           %{file: f.file, line: f.line, mass: f.mass}
         end),
-      snippets: clone.source_snippets
+      snippets: Clone.source_snippets(clone)
     }
 
     base

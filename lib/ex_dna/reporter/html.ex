@@ -7,6 +7,8 @@ defmodule ExDNA.Reporter.HTML do
 
   @behaviour ExDNA.Reporter
 
+  alias ExDNA.Detection.Clone
+
   @output_file "ex_dna_report.html"
 
   @impl true
@@ -84,11 +86,13 @@ defmodule ExDNA.Reporter.HTML do
         ~s(<a class="location" href="#">#{escape(label)}</a>)
       end)
 
+    snippets_list = Clone.source_snippets(clone)
+
     snippets =
-      clone.source_snippets
+      snippets_list
       |> Enum.with_index(1)
       |> Enum.map_join("\n", fn {snippet, i} ->
-        label = if length(clone.source_snippets) > 1, do: "Fragment #{i}", else: ""
+        label = if length(snippets_list) > 1, do: "Fragment #{i}", else: ""
 
         """
         <div class="snippet">

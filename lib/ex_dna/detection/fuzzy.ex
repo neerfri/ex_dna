@@ -91,10 +91,6 @@ defmodule ExDNA.Detection.Fuzzy do
         %{file: frag_a.file, line: frag_a.line, ast: frag_a.ast, mass: frag_a.mass},
         %{file: frag_b.file, line: frag_b.line, ast: frag_b.ast, mass: frag_b.mass}
       ],
-      source_snippets: [
-        Macro.to_string(frag_a.ast),
-        Macro.to_string(frag_b.ast)
-      ],
       suggestion: nil,
       similarity: similarity
     }
