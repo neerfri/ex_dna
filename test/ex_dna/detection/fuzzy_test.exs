@@ -1,7 +1,7 @@
 defmodule ExDNA.Detection.FuzzyTest do
   use ExUnit.Case, async: true
 
-  alias ExDNA.AST.{Fingerprint, Normalizer}
+  alias ExDNA.AST.{CharacteristicVector, Fingerprint, Normalizer}
   alias ExDNA.Detection.Fuzzy
 
   defp make_fragment(code, file, line) do
@@ -9,8 +9,9 @@ defmodule ExDNA.Detection.FuzzyTest do
     normalized = Normalizer.normalize(ast)
     hash = Fingerprint.compute_hash(normalized)
     mass = Fingerprint.mass(ast)
+    vector = CharacteristicVector.compute(ast)
 
-    %{hash: hash, mass: mass, ast: ast, file: file, line: line}
+    %{hash: hash, mass: mass, ast: ast, file: file, line: line, vector: vector}
   end
 
   describe "detect/3" do
