@@ -2,110 +2,83 @@ defmodule ExDNA.Detection.Fuzzy do
   @moduledoc """
   Type-III (near-miss) clone detection using sub-hash Jaccard similarity.
 
-  Each candidate fragment is characterized by its set of sub-subtree hashes
-  (all hashes from children that were fingerprinted). Jaccard similarity
-  between hash sets is a cheap, effective pre-filter that correlates well
-  with actual tree edit distance — unlike cosine similarity on node-type
-  frequencies which is too coarse for Elixir ASTs.
-
-  Fragments are grouped by mass range to limit comparisons, then pairs
-  passing the Jaccard pre-filter are verified with tree edit distance.
+  Each fragment carries a set of lightweight sub-hashes from its child
+  subtrees (computed during fingerprinting). An inverted index on sub-hashes
+  generates candidate pairs without O(n²) pairwise iteration — only fragments
+  sharing at least one structural sub-hash are compared. Jaccard similarity
+  on the full sub-hash sets then pre-filters before tree edit distance.
   """
 
-  alias ExDNA.AST.{EditDistance, Fingerprint, Normalizer}
+  alias ExDNA.AST.{EditDistance, Normalizer}
   alias ExDNA.Detection.Clone
 
   @mass_tolerance 0.3
   @jaccard_threshold 0.3
-  @sub_hash_min_mass 5
+  @max_posting_list 100
 
   @doc """
   Find Type-III clones from a list of fragments at the given similarity threshold.
   """
   @spec detect([map()], float(), MapSet.t()) :: [Clone.t()]
   def detect(fragments, min_similarity, exact_hashes) do
-    fragments
-    |> Enum.reject(fn f -> MapSet.member?(exact_hashes, f.hash) end)
-    |> Enum.sort_by(& &1.mass, :desc)
-    |> attach_sub_hashes()
-    |> group_by_mass_bucket()
-    |> Enum.flat_map(fn bucket -> find_pairs_in_bucket(bucket, min_similarity) end)
+    candidates =
+      fragments
+      |> Enum.reject(fn f -> MapSet.member?(exact_hashes, f.hash) end)
+      |> Enum.sort_by(& &1.mass, :desc)
+      |> Enum.with_index()
+
+    by_idx = Map.new(candidates, fn {frag, idx} -> {idx, frag} end)
+    norms = Map.new(candidates, fn {frag, idx} -> {idx, Normalizer.normalize(frag.ast)} end)
+
+    candidates
+    |> build_candidate_pairs(by_idx)
+    |> Enum.filter(fn {i, j} -> jaccard_compatible?(by_idx[i], by_idx[j]) end)
+    |> Enum.flat_map(fn {i, j} ->
+      sim = EditDistance.similarity(norms[i], norms[j])
+      if sim >= min_similarity, do: [{by_idx[i], by_idx[j], sim}], else: []
+    end)
     |> deduplicate_pairs()
     |> Enum.map(&pair_to_clone/1)
   end
 
-  defp attach_sub_hashes(fragments) do
-    Enum.map(fragments, fn frag ->
-      sub_hashes = collect_sub_hashes(frag.ast) |> MapSet.new()
-      Map.put(frag, :sub_hashes, sub_hashes)
+  defp build_candidate_pairs(indexed, by_idx) do
+    inverted =
+      Enum.reduce(indexed, %{}, fn {frag, idx}, acc ->
+        Enum.reduce(frag.sub_hashes, acc, fn h, a ->
+          Map.update(a, h, [idx], &[idx | &1])
+        end)
+      end)
+
+    inverted
+    |> Enum.reduce(MapSet.new(), fn {_hash, indices}, pairs ->
+      pairs_from_posting(indices, pairs)
+    end)
+    |> Enum.filter(fn {i, j} ->
+      a = by_idx[i]
+      b = by_idx[j]
+      mass_compatible?(a, b) and not same_location?(a, b)
     end)
   end
 
-  defp collect_sub_hashes(ast) do
-    {_ast, hashes} = do_collect(ast, [])
-    hashes
-  end
+  defp pairs_from_posting(indices, pairs) when length(indices) > @max_posting_list, do: pairs
 
-  defp do_collect({form, _meta, args} = node, acc) when is_atom(form) and is_list(args) do
-    acc = Enum.reduce(args, acc, fn child, a -> elem(do_collect(child, a), 1) end)
-
-    if Fingerprint.mass(node) >= @sub_hash_min_mass do
-      stripped = Normalizer.strip_metadata(node)
-      hash = :erlang.phash2(stripped)
-      {node, [hash | acc]}
-    else
-      {node, acc}
-    end
-  end
-
-  defp do_collect({left, right}, acc) do
-    {_, acc} = do_collect(left, acc)
-    {nil, elem(do_collect(right, acc), 1)}
-  end
-
-  defp do_collect(list, acc) when is_list(list) do
-    {nil, Enum.reduce(list, acc, fn item, a -> elem(do_collect(item, a), 1) end)}
-  end
-
-  defp do_collect(leaf, acc), do: {leaf, acc}
-
-  defp group_by_mass_bucket(fragments) do
-    fragments
-    |> Enum.chunk_by(fn f -> div(f.mass, 10) end)
-    |> merge_adjacent_buckets()
-  end
-
-  defp merge_adjacent_buckets([]), do: []
-  defp merge_adjacent_buckets([only]), do: [only]
-
-  defp merge_adjacent_buckets([bucket_a, bucket_b | rest]) do
-    merged = bucket_a ++ bucket_b
-    [merged | merge_adjacent_buckets([bucket_b | rest])]
-  end
-
-  defp find_pairs_in_bucket(bucket, min_similarity) do
-    indexed = Enum.with_index(bucket)
-
-    # Pre-normalize all ASTs once
-    norms = Map.new(indexed, fn {frag, idx} -> {idx, Normalizer.normalize(frag.ast)} end)
-
-    for {frag_a, i} <- indexed,
-        {frag_b, j} <- indexed,
-        j > i,
-        mass_compatible?(frag_a, frag_b),
-        not same_location?(frag_a, frag_b),
-        jaccard_compatible?(frag_a, frag_b),
-        sim = EditDistance.similarity(norms[i], norms[j]),
-        sim >= min_similarity do
-      {frag_a, frag_b, sim}
+  defp pairs_from_posting(indices, pairs) do
+    for i <- indices, j <- indices, i < j, reduce: pairs do
+      acc -> MapSet.put(acc, {i, j})
     end
   end
 
   defp jaccard_compatible?(a, b) do
-    intersection = MapSet.intersection(a.sub_hashes, b.sub_hashes) |> MapSet.size()
-    union = MapSet.union(a.sub_hashes, b.sub_hashes) |> MapSet.size()
+    sa = a.sub_hashes
+    sb = b.sub_hashes
 
-    if union == 0, do: false, else: intersection / union >= @jaccard_threshold
+    if MapSet.size(sa) == 0 or MapSet.size(sb) == 0 do
+      false
+    else
+      intersection = MapSet.intersection(sa, sb) |> MapSet.size()
+      union = MapSet.union(sa, sb) |> MapSet.size()
+      intersection / union >= @jaccard_threshold
+    end
   end
 
   defp mass_compatible?(a, b) do

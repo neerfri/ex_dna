@@ -10,7 +10,23 @@ defmodule ExDNA.Detection.FuzzyTest do
     hash = Fingerprint.compute_hash(normalized)
     mass = Fingerprint.mass(ast)
 
-    %{hash: hash, mass: mass, ast: ast, file: file, line: line}
+    sub_hashes =
+      ast
+      |> Macro.prewalk([], fn
+        {form, _meta, args} = node, acc when is_atom(form) and is_list(args) ->
+          if Fingerprint.mass(node) >= 5 do
+            {node, [:erlang.phash2({form, Fingerprint.mass(node)}) | acc]}
+          else
+            {node, acc}
+          end
+
+        node, acc ->
+          {node, acc}
+      end)
+      |> elem(1)
+      |> MapSet.new()
+
+    %{hash: hash, mass: mass, ast: ast, file: file, line: line, sub_hashes: sub_hashes}
   end
 
   describe "detect/3" do

@@ -5,9 +5,12 @@ defmodule ExDNA.AST.Fingerprint do
   Every subtree whose *mass* (node count) meets the threshold is hashed.
   Two normalized ASTs with the same hash are structurally identical clones.
 
-  Additionally, sliding windows over sibling sequences (consecutive statements
-  in a block) are fingerprinted to catch clones that span multiple statements
-  but don't align to a single subtree boundary.
+  Each fragment also carries a set of lightweight sub-hashes from its
+  children (computed during the same walk) for efficient Jaccard-based
+  fuzzy candidate pruning.
+
+  Additionally, sliding windows over sibling sequences in module bodies
+  are fingerprinted to catch clones that span multiple adjacent statements.
   """
 
   alias ExDNA.AST.Normalizer
@@ -18,30 +21,40 @@ defmodule ExDNA.AST.Fingerprint do
           mass: pos_integer(),
           ast: Macro.t(),
           file: String.t(),
-          line: pos_integer()
+          line: pos_integer(),
+          sub_hashes: MapSet.t(integer())
         }
 
   @max_window_size 4
+  @sub_hash_min_mass 5
+  @module_level_forms [:def, :defp, :defmacro, :defmacrop]
 
   @doc """
   Walk an AST and return all subtree fragments that meet `min_mass`.
-
-  Each fragment contains the normalized hash, mass, original AST (for display),
-  source file, and starting line number.
   """
   @spec fragments(Macro.t(), String.t(), pos_integer(), keyword()) :: [fragment()]
   def fragments(ast, file, min_mass, opts \\ []) do
     norm_opts = Keyword.take(opts, [:literal_mode, :normalize_pipes])
     excluded = Keyword.get(opts, :excluded_macros, []) |> MapSet.new()
-    {_ast, frags} = walk(ast, file, min_mass, norm_opts, excluded, [])
+    {_ast, frags, _sub_hashes} = walk(ast, file, min_mass, norm_opts, excluded, [], MapSet.new())
     frags
   end
 
-  defp walk({:__block__, _meta, args} = node, file, min_mass, norm_opts, excluded, acc)
+  # __block__ — walk children, optionally generate sibling windows, don't fingerprint the block itself
+  defp walk(
+         {:__block__, _meta, args} = node,
+         file,
+         min_mass,
+         norm_opts,
+         excluded,
+         acc,
+         _parent_subs
+       )
        when is_list(args) do
-    acc =
-      Enum.reduce(args, acc, fn child, a ->
-        walk_acc(child, file, min_mass, norm_opts, excluded, a)
+    {acc, child_subs} =
+      Enum.reduce(args, {acc, MapSet.new()}, fn child, {a, subs} ->
+        {_, a, child_s} = walk(child, file, min_mass, norm_opts, excluded, a, MapSet.new())
+        {a, MapSet.union(subs, child_s)}
       end)
 
     acc =
@@ -51,20 +64,32 @@ defmodule ExDNA.AST.Fingerprint do
         acc
       end
 
-    {node, acc}
+    {node, acc, child_subs}
   end
 
-  defp walk({form, _meta, args} = node, file, min_mass, norm_opts, excluded, acc)
+  # Regular call nodes — walk children, fingerprint if large enough
+  defp walk({form, _meta, args} = node, file, min_mass, norm_opts, excluded, acc, _parent_subs)
        when is_list(args) do
     if excluded_macro?(form, excluded) do
-      {node, acc}
+      {node, acc, MapSet.new()}
     else
-      acc =
-        Enum.reduce(args, acc, fn child, a ->
-          walk_acc(child, file, min_mass, norm_opts, excluded, a)
+      {acc, child_subs} =
+        Enum.reduce(args, {acc, MapSet.new()}, fn child, {a, subs} ->
+          {_, a, child_s} = walk(child, file, min_mass, norm_opts, excluded, a, MapSet.new())
+          {a, MapSet.union(subs, child_s)}
         end)
 
       mass = mass(node)
+
+      # Collect lightweight sub-hash for this node (used by parent's Jaccard set)
+      my_sub_hash =
+        if mass >= @sub_hash_min_mass do
+          MapSet.new([:erlang.phash2({form, mass})])
+        else
+          MapSet.new()
+        end
+
+      all_subs = MapSet.union(child_subs, my_sub_hash)
 
       if mass >= min_mass do
         normalized = Normalizer.normalize(node, norm_opts)
@@ -77,39 +102,35 @@ defmodule ExDNA.AST.Fingerprint do
           mass: mass,
           ast: node,
           file: file,
-          line: line
+          line: line,
+          sub_hashes: all_subs
         }
 
-        {node, [frag | acc]}
+        {node, [frag | acc], all_subs}
       else
-        {node, acc}
+        {node, acc, all_subs}
       end
     end
   end
 
-  defp walk({left, right}, file, min_mass, norm_opts, excluded, acc) do
-    {_, acc} = walk(left, file, min_mass, norm_opts, excluded, acc)
-    {_, acc} = walk(right, file, min_mass, norm_opts, excluded, acc)
-    {{left, right}, acc}
+  defp walk({left, right}, file, min_mass, norm_opts, excluded, acc, _parent_subs) do
+    {_, acc, subs_l} = walk(left, file, min_mass, norm_opts, excluded, acc, MapSet.new())
+    {_, acc, subs_r} = walk(right, file, min_mass, norm_opts, excluded, acc, MapSet.new())
+    {{left, right}, acc, MapSet.union(subs_l, subs_r)}
   end
 
-  defp walk(list, file, min_mass, norm_opts, excluded, acc) when is_list(list) do
-    acc =
-      Enum.reduce(list, acc, fn item, a ->
-        walk_acc(item, file, min_mass, norm_opts, excluded, a)
+  defp walk(list, file, min_mass, norm_opts, excluded, acc, _parent_subs) when is_list(list) do
+    {acc, subs} =
+      Enum.reduce(list, {acc, MapSet.new()}, fn item, {a, s} ->
+        {_, a, child_s} = walk(item, file, min_mass, norm_opts, excluded, a, MapSet.new())
+        {a, MapSet.union(s, child_s)}
       end)
 
-    {list, acc}
+    {list, acc, subs}
   end
 
-  defp walk(leaf, _file, _min_mass, _norm_opts, _excluded, acc), do: {leaf, acc}
-
-  defp walk_acc(node, file, min_mass, norm_opts, excluded, acc) do
-    {_, acc} = walk(node, file, min_mass, norm_opts, excluded, acc)
-    acc
-  end
-
-  @module_level_forms [:def, :defp, :defmacro, :defmacrop]
+  defp walk(leaf, _file, _min_mass, _norm_opts, _excluded, acc, _parent_subs),
+    do: {leaf, acc, MapSet.new()}
 
   defp module_body?(children) when length(children) > 30, do: false
 
@@ -151,7 +172,8 @@ defmodule ExDNA.AST.Fingerprint do
         mass: combined_mass,
         ast: synthetic,
         file: file,
-        line: first_line(window)
+        line: first_line(window),
+        sub_hashes: MapSet.new()
       }
 
       [frag | acc]
