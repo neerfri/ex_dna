@@ -8,9 +8,15 @@ defmodule ExDNA.Detection.Pipeline do
 
   @spec collect_files(Config.t()) :: [String.t()]
   def collect_files(%Config{paths: paths, ignore: ignore_patterns}) do
+    ignored_files =
+      ignore_patterns
+      |> Enum.flat_map(&Path.wildcard/1)
+      |> Enum.map(&Path.expand/1)
+      |> MapSet.new()
+
     paths
     |> Enum.flat_map(&expand_path/1)
-    |> Enum.reject(fn file -> ignored?(file, ignore_patterns) end)
+    |> Enum.reject(fn file -> MapSet.member?(ignored_files, Path.expand(file)) end)
     |> Enum.uniq()
     |> Enum.sort()
   end
@@ -75,25 +81,6 @@ defmodule ExDNA.Detection.Pipeline do
       true ->
         []
     end
-  end
-
-  defp ignored?(file, patterns) do
-    Enum.any?(patterns, fn pattern ->
-      file
-      |> Path.relative_to_cwd()
-      |> matches_glob?(pattern)
-    end)
-  end
-
-  defp matches_glob?(path, pattern) do
-    regex =
-      pattern
-      |> Regex.escape()
-      |> String.replace("\\*\\*", ".*")
-      |> String.replace("\\*", "[^/]*")
-      |> then(&Regex.compile!("^#{&1}$"))
-
-    Regex.match?(regex, path)
   end
 
   @doc false
