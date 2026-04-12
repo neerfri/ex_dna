@@ -2,79 +2,76 @@
 
 ## Unreleased
 
-### Detection improvements
+### New
 
-- **Sub-hash Jaccard pre-filter for Type-III** — Each fragment carries a set
-  of lightweight sub-hashes from its child subtrees, computed during the
-  fingerprint walk (zero extra cost). An inverted index on sub-hashes generates
-  candidate pairs without O(n²) pairwise iteration — only fragments sharing
-  structural sub-components are compared. Jaccard similarity then pre-filters
-  before expensive tree edit distance.
-- **Sibling window fingerprinting** — Consecutive statements in module bodies
-  are fingerprinted as sliding windows (2–4 siblings). Catches clones where
-  adjacent `def`s are copied between modules but surrounding code differs.
-  Only applies to module-level blocks (not function bodies) to avoid
-  combinatorial blowup.
-- **Cross-arity delegation grouping** — `def foo(x), do: foo(x, [])` followed
-  by `def foo(x, opts)` are now grouped as a single unit for fingerprinting.
-  Enables detection of duplicated wrapper+body patterns across modules.
-- **Struct/map field order normalization** — `%User{name: x, age: y}` and
-  `%User{age: y, name: x}` now produce the same hash in abstract mode (Type-II).
-- **Minimum fuzzy mass** — Type-III detection only considers fragments with
-  mass ≥ 2× `min_mass`, filtering out tiny fragments that produce noise and
-  dominate runtime.
+- **SARIF output** — `mix ex_dna --format sarif` generates a report compatible
+  with GitHub Code Scanning, VS Code SARIF Viewer, and other standard tools.
+- **Clone budget for CI** — `mix ex_dna --max-clones 10` exits with code 1
+  only when the count exceeds the budget. Useful for gradual adoption in
+  brownfield projects.
+- **Near-miss detection scales to large codebases** — Type-III detection
+  reworked with an inverted index on structural sub-hashes. Previously choked
+  on 200+ file projects; now handles 500+ files in seconds.
+- **Sibling window detection** — Catches duplicated groups of adjacent
+  `def`/`defp` that were previously invisible because they didn't share a
+  common AST parent. For example, three consecutive functions copied between
+  controllers are now detected even if the surrounding module code differs.
+- **Delegation pattern detection** — `def fetch(id), do: fetch(id, [])` +
+  `def fetch(id, opts)` are grouped as one unit. Duplicated wrapper+body
+  pairs across modules are now caught.
+- **Struct/map field order doesn't matter** — `%User{name: x, age: y}` and
+  `%User{age: y, name: x}` match in Type-II mode.
+
+### Fixed
+
+- **Crash on `%{acc | field: value}` syntax** in abstract mode.
+- **Crash on `__MODULE__.function()` calls** during analysis.
+- **Crash when passing a list of paths** — `ExDNA.analyze(["lib/", "test/"])`
+  now works as documented.
+- **`--max-clones` output was printing literal text** instead of actual numbers.
+- **Suggestions for clones with 3+ occurrences** showed wrong call sites for
+  the 3rd+ occurrence. Now each occurrence gets its own anti-unification.
+- **Cache wasn't invalidated** when changing `min_mass`, `literal_mode`, or
+  other detection options. Stale results were served silently.
+- **`_` and `__MODULE__` were renamed** during variable normalization, causing
+  false positives in Type-II detection.
+- **HTML report links were dead** (`href="#"`). Now clickable `file://` URIs
+  that open in your editor.
+- **Behaviour suggestions fired for private functions.** `@callback` only
+  makes sense for `def`, not `defp`.
+- **Same-file clone diagnostics in LSP** were missing cross-references to
+  other locations within the same file.
+- **`files_analyzed` stat** counted files that failed to parse. Now only
+  counts successfully analyzed files.
+- **Glob patterns** with `?`, character classes, and edge cases now work
+  correctly.
+
+### Improved
+
+- **Compiler runs full detection** — The incremental compiler now finds
+  Type-I, II, and III clones (previously only Type-I).
+- **Detection timing is accurate** — `detection_time_ms` in stats reflects
+  actual detection time, not wall clock including report generation.
+- **JSON output includes behaviour suggestions** — Previously only console
+  and HTML reports showed them.
+- **Config validation** — Invalid options like `min_mass: -1` or
+  `literal_mode: :foo` now raise immediately with a clear message.
+- **HTML report uses EEx templates** — Easier to customize.
+- **Zero dialyzer warnings** — All previously suppressed errors resolved.
 
 ### Performance
 
-- **Inverted index candidate generation** — Replaced O(n²) pairwise comparison
-  in fuzzy detection with an inverted index on sub-hashes. Posting lists
-  exceeding 100 entries are skipped as structural noise.
-- **Pre-normalized ASTs** — ASTs are normalized once per mass bucket instead of
-  once per pair comparison.
-- Tested on 18 real-world projects (up to 554 files): all complete in under 6s
-  with full Type-I/II/III detection enabled.
+Benchmarked on real-world open-source projects with full Type-I/II/III
+detection (`min_mass: 30, literal_mode: :abstract, min_similarity: 0.85`):
 
-### Bug fixes
-
-- **`has_dsl_call?` logic error** — The macro suggestion detector was resetting
-  its `found` flag on non-DSL nodes, losing detection when a DSL call like
-  `field` was followed by a regular call.
-- **Map/struct update crash** — `%{acc | total: x}` syntax crashed the abstract
-  normalizer because the `|` pipe in maps isn't a key-value pair. Field sorting
-  now only applies to flat keyword lists.
-- **`Macro.to_string` crash on synthetic ASTs** — Window fragments and
-  anti-unifier output can produce ASTs that crash `Macro.to_string`. Now
-  rescued gracefully.
-- **`__MODULE__` in remote calls** — `CharacteristicVector` crashed when
-  `__MODULE__.function()` appeared in code because `parts` contained an AST
-  node instead of an atom.
-- **Glob matching** — Replaced fragile hand-rolled regex glob with
-  `Path.wildcard` expansion.
-- **Module name resolution** — `BehaviourSuggestion` now reads the `defmodule`
-  alias from the file AST instead of deriving from the file path, which broke
-  on acronyms like `ExDNA`, `HTTP`, `API`.
-- **HTML report links** — Location `<a>` tags now use `file://` URIs with
-  `#L{line}` fragments instead of dead `href="#"`.
-- **`file_uri` used invalid `:line` suffix** — Changed to standard `#L42`
-  fragment syntax.
-
-### Improvements
-
-- **Compiler runs full pipeline** — The incremental `Mix.Task.Compiler` now
-  runs Type-I/II/III detection instead of only Type-I. Cache entries store
-  parsed ASTs to support re-fingerprinting with different configs.
-- **`detection_time_ms` populated** — Report stats now include actual timing
-  via `:timer.tc` instead of hardcoded 0.
-- **`--max-clones` CLI flag** — Exits with code 1 only when the clone count
-  exceeds the budget, enabling gradual adoption in brownfield projects.
-- **Report file counting** — Uses `Pipeline.collect_files` instead of
-  re-expanding paths independently.
-- **HTML report uses EEx** — Layout extracted from string interpolation into
-  a proper `html.html.eex` template.
-- **Zero dialyzer suppressions** — Added `:mix` and `:credo` to PLT, removed
-  `.dialyzer_ignore.exs`. All 18 previously suppressed errors resolved.
-- **Replaced duplicate `relative_path/1`** — Three modules defined the same
-  helper; all now use `Path.relative_to_cwd/1` from stdlib.
+| Project | Files | Clones | Time |
+|---------|-------|--------|------|
+| Phoenix | 74 | 15 | 0.3s |
+| Ecto | 56 | 20 | 0.5s |
+| Oban | 64 | 21 | 0.1s |
+| Livebook | 264 | 64 | 2.4s |
+| Plausible | 465 | 83 | 3.8s |
+| Ash | 554 | 524 | 9.8s |
 
 ## 1.2.2
 
@@ -87,8 +84,6 @@
 ## 1.2.0
 
 - Detect duplicated multi-clause functions
-- Consecutive `def`/`defp` clauses with the same name/arity are analyzed
-  as a single unit
 
 ## 1.1.0
 
@@ -99,9 +94,9 @@
 
 - Initial release
 - Type-I/II/III clone detection
-- Smart naming for refactoring suggestions
+- Refactoring suggestions
 - Cross-file grouping
 - `@no_clone` annotation
-- Incremental `Mix.Task.Compiler`
+- Incremental compiler
 - LSP server
 - Console, JSON, HTML reporters
