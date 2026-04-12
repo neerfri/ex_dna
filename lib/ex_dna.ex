@@ -63,8 +63,8 @@ defmodule ExDNA do
   def analyze(opts) when is_list(opts) do
     config = Config.new(opts)
 
-    config
-    |> Detection.Detector.run()
-    |> Report.new(config)
+    {elapsed_us, clones} = :timer.tc(fn -> Detection.Detector.run(config) end)
+
+    Report.new(clones, config, div(elapsed_us, 1000))
   end
 end

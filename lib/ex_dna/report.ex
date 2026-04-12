@@ -24,9 +24,9 @@ defmodule ExDNA.Report do
 
   defstruct [:config, clones: [], stats: %{}]
 
-  @spec new([Clone.t()], Config.t()) :: t()
-  def new(clones, config) do
-    stats = compute_stats(clones, config)
+  @spec new([Clone.t()], Config.t(), non_neg_integer()) :: t()
+  def new(clones, config, detection_time_ms \\ 0) do
+    stats = compute_stats(clones, config, detection_time_ms)
 
     report = %__MODULE__{
       clones: clones,
@@ -41,7 +41,7 @@ defmodule ExDNA.Report do
     report
   end
 
-  defp compute_stats(clones, config) do
+  defp compute_stats(clones, config, detection_time_ms) do
     files =
       config.paths
       |> Enum.flat_map(fn p ->
@@ -62,7 +62,7 @@ defmodule ExDNA.Report do
       type_i_count: Enum.count(clones, &(&1.type == :type_i)),
       type_ii_count: Enum.count(clones, &(&1.type == :type_ii)),
       type_iii_count: Enum.count(clones, &(&1.type == :type_iii)),
-      detection_time_ms: 0
+      detection_time_ms: detection_time_ms
     }
   end
 end
