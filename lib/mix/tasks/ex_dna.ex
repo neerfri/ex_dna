@@ -18,7 +18,7 @@ defmodule Mix.Tasks.ExDna do
     * `--exclude-macro` — macro name to skip during analysis (repeatable).
       `@` is excluded by default. Common: `schema`, `pipe_through`, `plug`
     * `--ignore` — glob pattern to exclude (repeatable)
-    * `--format` — output format: `console` (default), `json`, or `html`
+    * `--format` — output format: `console` (default), `json`, `html`, or `sarif`
     * `--max-clones` — maximum allowed clones. Exits with code 1 only when
       exceeded. Useful for gradual adoption in brownfield projects.
 
@@ -48,14 +48,14 @@ defmodule Mix.Tasks.ExDna do
     report = ExDNA.analyze(config_opts)
     detection_ms = report.stats.detection_time_ms
 
-    unless Keyword.get(opts, :format) == "json" do
+    unless Keyword.get(opts, :format) in ["json", "sarif"] do
       IO.puts("  Detection time:     #{detection_ms}ms\n")
     end
 
     max_clones = Keyword.get(opts, :max_clones)
     total = report.stats.total_clones
 
-    if max_clones && Keyword.get(opts, :format) != "json" do
+    if max_clones && Keyword.get(opts, :format) not in ["json", "sarif"] do
       IO.puts("  Clone budget:       #{total}/#{max_clones}\n")
     end
 
@@ -72,12 +72,7 @@ defmodule Mix.Tasks.ExDna do
   end
 
   defp build_config(opts, paths) do
-    reporters =
-      case Keyword.get(opts, :format, "console") do
-        "json" -> [ExDNA.Reporter.JSON]
-        "html" -> [ExDNA.Reporter.HTML]
-        _ -> [ExDNA.Reporter.Console]
-      end
+    reporters = reporters_for(Keyword.get(opts, :format, "console"))
 
     literal_mode =
       case Keyword.get(opts, :literal_mode, "keep") do
@@ -103,6 +98,12 @@ defmodule Mix.Tasks.ExDna do
     |> maybe_put(:excluded_macros, excluded_macros)
   end
 
+  defp reporters_for("json"), do: [ExDNA.Reporter.JSON]
+  defp reporters_for("html"), do: [ExDNA.Reporter.HTML]
+  defp reporters_for("sarif"), do: [ExDNA.Reporter.SARIF]
+  defp reporters_for(_), do: [ExDNA.Reporter.Console]
+
   defp maybe_put(opts, _key, nil), do: opts
+
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 end
