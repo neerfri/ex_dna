@@ -2,7 +2,7 @@ defmodule ExDNA.Detection.DetectorTest do
   use ExUnit.Case, async: true
 
   alias ExDNA.Config
-  alias ExDNA.Detection.{Clone, Detector}
+  alias ExDNA.Detection.Detector
 
   setup do
     dir = Path.join(System.tmp_dir!(), "ex_dna_test_#{:erlang.unique_integer([:positive])}")
@@ -225,7 +225,7 @@ defmodule ExDNA.Detection.DetectorTest do
 
       schema_clones =
         Enum.filter(clones_without, fn c ->
-          Enum.any?(Clone.source_snippets(c), &String.contains?(&1, "field"))
+          Enum.any?(c.source_snippets, &String.contains?(&1, "field"))
         end)
 
       config_with =
@@ -364,7 +364,7 @@ defmodule ExDNA.Detection.DetectorTest do
       format_clones =
         Enum.filter(clones, fn c ->
           Enum.any?(
-            Clone.source_snippets(c),
+            c.source_snippets,
             &String.contains?(&1, "format_bytes")
           )
         end)
@@ -378,7 +378,7 @@ defmodule ExDNA.Detection.DetectorTest do
       assert Enum.any?(files, &String.ends_with?(&1, "cache.ex"))
       assert Enum.any?(files, &String.ends_with?(&1, "size.ex"))
 
-      snippet = clone |> Clone.source_snippets() |> hd()
+      snippet = hd(clone.source_snippets)
       refute String.contains?(snippet, "__ex_dna_grouped_def__")
       assert String.contains?(snippet, "format_bytes")
     end
@@ -405,7 +405,7 @@ defmodule ExDNA.Detection.DetectorTest do
 
       convert_clones =
         Enum.filter(clones, fn c ->
-          Enum.any?(Clone.source_snippets(c), &String.contains?(&1, "convert"))
+          Enum.any?(c.source_snippets, &String.contains?(&1, "convert"))
         end)
 
       grouped_clone =

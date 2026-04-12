@@ -41,7 +41,7 @@
   <p class="no-clones">✓ No code duplication detected</p>
 <% else %>
   <%= for {clone, index} <- Enum.with_index(clones, 1) do %>
-    <% snippets_list = Clone.source_snippets(clone) %>
+    <% snippets_list = clone.source_snippets %>
     <details class="clone-card" open>
       <summary>
         <span class="badge <%= badge_class(clone.type) %>"><%= type_badge(clone.type) %></span>

@@ -17,7 +17,7 @@ defmodule ExDNA.Detection.Clone do
           hash: binary() | nil,
           mass: pos_integer(),
           fragments: [fragment_location()],
-          source_snippets: [String.t()] | :lazy,
+          source_snippets: [String.t()],
           suggestion: map() | nil,
           behaviour_suggestion: map() | nil,
           similarity: float() | nil
@@ -31,11 +31,14 @@ defmodule ExDNA.Detection.Clone do
     :behaviour_suggestion,
     :similarity,
     fragments: [],
-    source_snippets: :lazy
+    source_snippets: []
   ]
 
   @doc """
   Build a clone from a group of matching fragments.
+
+  Source snippets are computed eagerly since every surviving clone
+  will have them accessed by reporters and stats.
   """
   @spec from_fragments([map()], clone_type()) :: t()
   def from_fragments(frags, type) do
@@ -46,24 +49,18 @@ defmodule ExDNA.Detection.Clone do
         %{file: f.file, line: f.line, ast: f.ast, mass: f.mass}
       end)
 
+    snippets =
+      Enum.map(frags, fn f ->
+        f.ast |> unwrap_grouped_def() |> Macro.to_string()
+      end)
+
     %__MODULE__{
       type: type,
       hash: List.first(frags).hash,
       mass: mass,
-      fragments: locations
+      fragments: locations,
+      source_snippets: snippets
     }
-  end
-
-  @doc """
-  Return source snippets for a clone, computing them from ASTs on first access.
-  """
-  @spec source_snippets(t()) :: [String.t()]
-  def source_snippets(%__MODULE__{source_snippets: snippets}) when is_list(snippets), do: snippets
-
-  def source_snippets(%__MODULE__{fragments: frags}) do
-    Enum.map(frags, fn f ->
-      f.ast |> unwrap_grouped_def() |> Macro.to_string()
-    end)
   end
 
   defp unwrap_grouped_def(ast) do

@@ -7,8 +7,6 @@ defmodule ExDNA.Reporter.HTML do
 
   @behaviour ExDNA.Reporter
 
-  alias ExDNA.Detection.Clone
-
   @output_file "ex_dna_report.html"
 
   require EEx
