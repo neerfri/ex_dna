@@ -13,6 +13,7 @@ defmodule ExDNA.Detection.Fuzzy do
 
   @mass_tolerance 0.3
   @cosine_threshold 0.7
+  @max_candidates 2000
 
   @doc """
   Find Type-III clones from a list of fragments at the given similarity threshold.
@@ -24,6 +25,8 @@ defmodule ExDNA.Detection.Fuzzy do
   def detect(fragments, min_similarity, exact_hashes) do
     fragments
     |> Enum.reject(fn f -> MapSet.member?(exact_hashes, f.hash) end)
+    |> Enum.sort_by(& &1.mass, :desc)
+    |> Enum.take(@max_candidates)
     |> attach_vectors()
     |> group_by_mass_bucket()
     |> Enum.flat_map(fn bucket -> find_pairs_in_bucket(bucket, min_similarity) end)
