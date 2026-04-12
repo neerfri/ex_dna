@@ -123,8 +123,9 @@ defmodule ExDNA.Reporter.SARIF do
     locations
     |> Enum.with_index()
     |> Enum.map(fn {loc, idx} ->
-      Map.put(loc, :id, idx)
-      |> put_in([:message], %{text: "Also duplicated here"})
+      loc
+      |> Map.put(:id, idx)
+      |> Map.put(:message, %{text: "Also duplicated here"})
     end)
   end
 

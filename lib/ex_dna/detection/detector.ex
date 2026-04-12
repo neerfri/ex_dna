@@ -40,7 +40,8 @@ defmodule ExDNA.Detection.Detector do
   """
   @spec run(Config.t(), [{String.t(), Macro.t()}]) :: {[Clone.t()], non_neg_integer()}
   def run(%Config{} = config, file_ast_pairs) when is_list(file_ast_pairs) do
-    {run_detection(config, file_ast_pairs), length(file_ast_pairs)}
+    {run_detection(config, file_ast_pairs),
+     Enum.count(file_ast_pairs, fn {_, ast} -> ast != nil end)}
   end
 
   defp run_detection(config, file_ast_pairs) do

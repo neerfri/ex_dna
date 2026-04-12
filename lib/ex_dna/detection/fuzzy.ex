@@ -69,12 +69,8 @@ defmodule ExDNA.Detection.Fuzzy do
   end
 
   defp pairs_from_posting(indices, pairs, by_idx) when length(indices) > @max_posting_list do
-    sampled =
-      indices
-      |> Enum.sort_by(fn idx -> by_idx[idx].mass end, :desc)
-      |> Enum.take(@max_posting_list)
-
-    pairs_from_posting(sampled, pairs, by_idx)
+    # Candidates are pre-sorted by mass descending, so indices preserve that order
+    pairs_from_posting(Enum.take(indices, @max_posting_list), pairs, by_idx)
   end
 
   defp pairs_from_posting(indices, pairs, by_idx) do
