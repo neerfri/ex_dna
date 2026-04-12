@@ -1,6 +1,4 @@
 defmodule ExDNA.AST.Normalizer do
-  alias ExDNA.AST.PipeNormalizer
-
   @moduledoc """
   Normalizes Elixir AST for structural comparison.
 
@@ -18,6 +16,8 @@ defmodule ExDNA.AST.Normalizer do
   4. **Map/struct field sorting** (abstract mode) — sorts key-value pairs
      so that `%{b: 1, a: 2}` and `%{a: 2, b: 1}` produce the same hash.
   """
+
+  alias ExDNA.AST.PipeNormalizer
 
   @type option :: {:literal_mode, :keep | :abstract} | {:normalize_pipes, boolean()}
 

@@ -86,8 +86,9 @@ defmodule ExDNA.Reporter.HTML do
   defp format_similarity(nil), do: ""
   defp format_similarity(sim), do: "  #{Float.round(sim * 100, 1)}%"
 
-  defp file_uri(path, _line) do
-    "file://" <> Path.expand(path)
+  defp file_uri(path, line) do
+    abs = Path.expand(path)
+    if line > 0, do: "file://#{abs}:#{line}", else: "file://#{abs}"
   end
 
   defp relative_path(path) do

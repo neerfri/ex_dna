@@ -17,14 +17,12 @@ defmodule ExDNA.AST.CharacteristicVector do
   Returns a map where keys are node type atoms and values are occurrence counts.
   """
   @spec compute(Macro.t()) :: %{atom() => pos_integer()}
-  def compute(ast) do
-    {_ast, vector} = walk(ast, %{})
-    vector
-  end
+  def compute(ast), do: walk(ast, %{})
 
-  defp walk({form, _meta, args} = _node, vec) when is_atom(form) and is_list(args) do
-    vec = Map.update(vec, form, 1, &(&1 + 1))
-    {nil, Enum.reduce(args, vec, fn child, v -> elem(walk(child, v), 1) end)}
+  defp walk({form, _meta, args}, vec) when is_atom(form) and is_list(args) do
+    vec
+    |> Map.update(form, 1, &(&1 + 1))
+    |> then(&Enum.reduce(args, &1, fn child, v -> walk(child, v) end))
   end
 
   defp walk({{:., _dot_meta, call_parts}, _meta, args}, vec) do
@@ -40,36 +38,27 @@ defmodule ExDNA.AST.CharacteristicVector do
           vec
       end
 
-    vec = Enum.reduce(call_parts, vec, fn part, v -> elem(walk(part, v), 1) end)
-    {nil, Enum.reduce(args, vec, fn child, v -> elem(walk(child, v), 1) end)}
+    vec = Enum.reduce(call_parts, vec, fn part, v -> walk(part, v) end)
+    Enum.reduce(args, vec, fn child, v -> walk(child, v) end)
   end
 
-  defp walk({form, _meta, context}, vec) when is_atom(form) and is_atom(context) do
-    {nil, Map.update(vec, :variable, 1, &(&1 + 1))}
+  defp walk({_form, _meta, context}, vec) when is_atom(context) do
+    Map.update(vec, :variable, 1, &(&1 + 1))
   end
 
   defp walk({left, right}, vec) do
-    {_, vec} = walk(left, vec)
-    {nil, elem(walk(right, vec), 1)}
+    walk(right, walk(left, vec))
   end
 
   defp walk(list, vec) when is_list(list) do
-    {nil, Enum.reduce(list, vec, fn item, v -> elem(walk(item, v), 1) end)}
+    Enum.reduce(list, vec, fn item, v -> walk(item, v) end)
   end
 
-  defp walk(val, vec) when is_integer(val),
-    do: {nil, Map.update(vec, :integer, 1, &(&1 + 1))}
-
-  defp walk(val, vec) when is_float(val),
-    do: {nil, Map.update(vec, :float, 1, &(&1 + 1))}
-
-  defp walk(val, vec) when is_binary(val),
-    do: {nil, Map.update(vec, :string, 1, &(&1 + 1))}
-
-  defp walk(val, vec) when is_atom(val),
-    do: {nil, Map.update(vec, :atom, 1, &(&1 + 1))}
-
-  defp walk(_other, vec), do: {nil, vec}
+  defp walk(val, vec) when is_integer(val), do: Map.update(vec, :integer, 1, &(&1 + 1))
+  defp walk(val, vec) when is_float(val), do: Map.update(vec, :float, 1, &(&1 + 1))
+  defp walk(val, vec) when is_binary(val), do: Map.update(vec, :string, 1, &(&1 + 1))
+  defp walk(val, vec) when is_atom(val), do: Map.update(vec, :atom, 1, &(&1 + 1))
+  defp walk(_other, vec), do: vec
 
   @doc """
   Compute cosine similarity between two characteristic vectors.
@@ -87,24 +76,16 @@ defmodule ExDNA.AST.CharacteristicVector do
         {dot + a * b, na + a * a, nb + b * b}
       end)
 
-    norm_a = :math.sqrt(norm_a_sq)
-    norm_b = :math.sqrt(norm_b_sq)
+    denom = :math.sqrt(norm_a_sq) * :math.sqrt(norm_b_sq)
 
-    if norm_a == 0.0 or norm_b == 0.0 do
-      0.0
-    else
-      dot / (norm_a * norm_b)
-    end
+    if denom == 0.0, do: 0.0, else: dot / denom
   end
 
   @doc """
   Compute random hyperplane LSH signatures for a characteristic vector.
 
-  Returns a bitstring of `num_hashes` bits. Two vectors with the same
-  signature bits in a band are likely similar (cosine similarity).
-
-  The `hyperplanes` argument is a list of `%{atom => float}` maps
-  representing random unit vectors. Generate once and reuse across all fragments.
+  Each bit indicates which side of a random hyperplane the vector falls on.
+  Two vectors with matching signature bits in a band are likely similar.
   """
   @spec lsh_signature(%{atom() => number()}, [[{atom(), float()}]]) :: [boolean()]
   def lsh_signature(vec, hyperplanes) do
@@ -118,7 +99,7 @@ defmodule ExDNA.AST.CharacteristicVector do
   Generate random hyperplanes for LSH.
 
   Each hyperplane is a list of `{dimension_key, random_value}` pairs.
-  Only dimensions that appear in the given set of keys are included.
+  Generate once and reuse across all fragments in a detection run.
   """
   @spec generate_hyperplanes(MapSet.t(atom()), pos_integer()) :: [[{atom(), float()}]]
   def generate_hyperplanes(all_keys, num_hashes) do
