@@ -3,18 +3,14 @@ defmodule ExDNA.AST.ClauseGrouper do
   Groups consecutive function clauses with the same name/arity into synthetic
   compound nodes so the fingerprinter can detect duplicated multi-clause functions.
 
-  In Elixir's AST, multi-clause definitions like:
+  Also groups delegation wrappers with their target clause. A delegation is when
+  a lower-arity clause simply calls the same function with extra default arguments:
 
-      defp foo(x) when x > 0, do: x
-      defp foo(x), do: -x
+      def fetch(id), do: fetch(id, [])
+      def fetch(id, opts) do ... end
 
-  are represented as separate `defp` nodes in the module body. The fingerprinter
-  walks each independently, so a 3-clause function with mass 15 per clause
-  (total ~50) may fall below `min_mass` per clause and never be detected.
-
-  This module rewrites the module body to wrap consecutive same-name/arity clauses
-  in a synthetic `@ex_dna_grouped_def` block that the fingerprinter treats as
-  a single subtree.
+  These are grouped into a single `__ex_dna_grouped_def__` block so the fingerprinter
+  can detect duplicated wrapper+body patterns across modules.
   """
 
   @def_forms [:def, :defp, :defmacro, :defmacrop]
@@ -27,14 +23,15 @@ defmodule ExDNA.AST.ClauseGrouper do
     Macro.prewalk(ast, fn
       {:defmodule, meta, [alias_node, [do: {:__block__, block_meta, body}]]}
       when is_list(body) ->
-        {:defmodule, meta, [alias_node, [do: {:__block__, block_meta, group_body(body)}]]}
+        grouped = body |> group_same_arity() |> group_delegations()
+        {:defmodule, meta, [alias_node, [do: {:__block__, block_meta, grouped}]]}
 
       other ->
         other
     end)
   end
 
-  defp group_body(nodes) do
+  defp group_same_arity(nodes) do
     nodes
     |> chunk_by_clause()
     |> Enum.flat_map(fn
@@ -42,6 +39,49 @@ defmodule ExDNA.AST.ClauseGrouper do
       group -> [wrap_group(group)]
     end)
   end
+
+  defp group_delegations(nodes), do: do_group_delegations(nodes, [])
+
+  defp do_group_delegations([], acc), do: Enum.reverse(acc)
+
+  defp do_group_delegations([node | rest], acc) do
+    case delegation_target(node, rest) do
+      {target, remaining} ->
+        grouped = wrap_group([node, target])
+        do_group_delegations(remaining, [grouped | acc])
+
+      nil ->
+        do_group_delegations(rest, [node | acc])
+    end
+  end
+
+  defp delegation_target(wrapper, [target | rest]) do
+    with {form, {name, wrapper_arity}} <- def_identity(wrapper),
+         {^form, {^name, target_arity}} <- def_identity(target),
+         true <- target_arity > wrapper_arity,
+         true <- delegates_to_self?(wrapper, name) do
+      {target, rest}
+    else
+      _ -> nil
+    end
+  end
+
+  defp delegation_target(_wrapper, []), do: nil
+
+  defp delegates_to_self?({form, _meta, [_call, [do: body]]}, name) when form in @def_forms do
+    body_delegates?(body, name)
+  end
+
+  defp delegates_to_self?({form, _meta, [{:when, _, _}, [do: body]]}, name)
+       when form in @def_forms do
+    body_delegates?(body, name)
+  end
+
+  defp delegates_to_self?(_, _), do: false
+
+  defp body_delegates?({name, _meta, args}, name) when is_atom(name) and is_list(args), do: true
+  defp body_delegates?({:|>, _, [_, {name, _, _}]}, name), do: true
+  defp body_delegates?(_, _), do: false
 
   defp chunk_by_clause(nodes), do: do_chunk(nodes, [])
 
@@ -74,6 +114,10 @@ defmodule ExDNA.AST.ClauseGrouper do
 
   defp def_identity({form, _meta, [call, _body]}) when form in @def_forms do
     {form, name_arity(call)}
+  end
+
+  defp def_identity({:__ex_dna_grouped_def__, _, [first | _]}) do
+    def_identity(first)
   end
 
   defp def_identity(_), do: nil

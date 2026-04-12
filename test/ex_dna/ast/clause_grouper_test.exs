@@ -177,4 +177,93 @@ defmodule ExDNA.AST.ClauseGrouperTest do
       assert length(clauses) == 2
     end
   end
+
+  describe "delegation grouping" do
+    test "groups wrapper clause with its target" do
+      ast =
+        quote do
+          defmodule Foo do
+            def fetch(id), do: fetch(id, [])
+
+            def fetch(id, opts) do
+              GenServer.call(server(), {:fetch, id}, Keyword.get(opts, :timeout, 5000))
+            end
+          end
+        end
+
+      grouped = ClauseGrouper.group(ast)
+      {:defmodule, _, [_, [do: {:__block__, _, body}]]} = grouped
+
+      assert [{:__ex_dna_grouped_def__, _, clauses}] = body
+      assert length(clauses) == 2
+    end
+
+    test "groups defp wrapper with defp target" do
+      ast =
+        quote do
+          defmodule Foo do
+            defp parse(data), do: parse(data, [])
+            defp parse(data, opts), do: do_parse(data, opts)
+          end
+        end
+
+      grouped = ClauseGrouper.group(ast)
+      {:defmodule, _, [_, [do: {:__block__, _, body}]]} = grouped
+
+      assert [{:__ex_dna_grouped_def__, _, clauses}] = body
+      assert length(clauses) == 2
+    end
+
+    test "does not group when wrapper calls a different function" do
+      ast =
+        quote do
+          defmodule Foo do
+            def fetch(id), do: do_fetch(id, [])
+            def fetch(id, opts), do: do_fetch(id, opts)
+          end
+        end
+
+      grouped = ClauseGrouper.group(ast)
+      {:defmodule, _, [_, [do: {:__block__, _, body}]]} = grouped
+
+      grouped_nodes = Enum.filter(body, &match?({:__ex_dna_grouped_def__, _, _}, &1))
+      assert grouped_nodes == []
+    end
+
+    test "does not group when arities go wrong direction" do
+      ast =
+        quote do
+          defmodule Foo do
+            def fetch(id, opts), do: fetch(id)
+            def fetch(id), do: :ok
+          end
+        end
+
+      grouped = ClauseGrouper.group(ast)
+      {:defmodule, _, [_, [do: {:__block__, _, body}]]} = grouped
+
+      grouped_nodes = Enum.filter(body, &match?({:__ex_dna_grouped_def__, _, _}, &1))
+      assert grouped_nodes == []
+    end
+
+    test "groups delegation that already has same-arity grouping on target" do
+      ast =
+        quote do
+          defmodule Foo do
+            def process(data), do: process(data, [])
+            def process(data, opts) when is_list(opts), do: do_it(data, opts)
+            def process(data, opts) when is_map(opts), do: do_it(data, Map.to_list(opts))
+          end
+        end
+
+      grouped = ClauseGrouper.group(ast)
+      {:defmodule, _, [_, [do: {:__block__, _, body}]]} = grouped
+
+      assert [{:__ex_dna_grouped_def__, _, clauses}] = body
+      assert length(clauses) == 2
+
+      [_wrapper, target] = clauses
+      assert match?({:__ex_dna_grouped_def__, _, _}, target)
+    end
+  end
 end
