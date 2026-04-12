@@ -30,9 +30,13 @@ defmodule ExDNA.AST.CharacteristicVector do
 
     vec =
       case call_parts do
-        [{:__aliases__, _, parts}, func] when is_atom(func) ->
-          key = :"#{Enum.join(parts, ".")}.#{func}"
-          Map.update(vec, key, 1, &(&1 + 1))
+        [{:__aliases__, _, parts}, func] when is_atom(func) and is_list(parts) ->
+          if Enum.all?(parts, &is_atom/1) do
+            key = :"#{Enum.join(parts, ".")}.#{func}"
+            Map.update(vec, key, 1, &(&1 + 1))
+          else
+            vec
+          end
 
         _ ->
           vec
