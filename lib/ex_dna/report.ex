@@ -4,7 +4,7 @@ defmodule ExDNA.Report do
   """
 
   alias ExDNA.Config
-  alias ExDNA.Detection.Clone
+  alias ExDNA.Detection.{Clone, Pipeline}
 
   @type stats :: %{
           files_analyzed: non_neg_integer(),
@@ -26,7 +26,8 @@ defmodule ExDNA.Report do
 
   @spec new([Clone.t()], Config.t(), non_neg_integer()) :: t()
   def new(clones, config, detection_time_ms \\ 0) do
-    stats = compute_stats(clones, config, detection_time_ms)
+    files_analyzed = length(Pipeline.collect_files(config))
+    stats = compute_stats(clones, files_analyzed, detection_time_ms)
 
     report = %__MODULE__{
       clones: clones,
@@ -41,14 +42,7 @@ defmodule ExDNA.Report do
     report
   end
 
-  defp compute_stats(clones, config, detection_time_ms) do
-    files =
-      config.paths
-      |> Enum.flat_map(fn p ->
-        if File.dir?(p), do: Path.wildcard(Path.join(p, "**/*.{ex,exs}")), else: [p]
-      end)
-      |> Enum.uniq()
-
+  defp compute_stats(clones, files_analyzed, detection_time_ms) do
     duplicated_lines =
       clones
       |> Enum.flat_map(& &1.source_snippets)
@@ -56,7 +50,7 @@ defmodule ExDNA.Report do
       |> Enum.sum()
 
     %{
-      files_analyzed: length(files),
+      files_analyzed: files_analyzed,
       total_clones: length(clones),
       total_duplicated_lines: duplicated_lines,
       type_i_count: Enum.count(clones, &(&1.type == :type_i)),
