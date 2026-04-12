@@ -81,11 +81,43 @@ defmodule ExDNA.Refactor.BehaviourSuggestion do
 
   defp distinct_modules(frags) do
     frags
-    |> Enum.map(fn frag -> module_from_path(frag.file) end)
+    |> Enum.map(fn frag -> module_for_fragment(frag.file, frag.line) end)
     |> Enum.uniq()
   end
 
-  defp module_from_path(path) do
+  defp module_for_fragment(file, line) do
+    case File.read(file) do
+      {:ok, source} ->
+        case Code.string_to_quoted(source, line: 1, columns: true, file: file) do
+          {:ok, ast} -> find_enclosing_module(ast, line)
+          _ -> fallback_module_name(file)
+        end
+
+      _ ->
+        fallback_module_name(file)
+    end
+  end
+
+  defp find_enclosing_module(ast, target_line) do
+    {_, result} =
+      Macro.prewalk(ast, nil, fn
+        {:defmodule, meta, [{:__aliases__, _, parts} | _]} = node, _acc ->
+          module_line = Keyword.get(meta, :line, 0)
+
+          if module_line <= target_line do
+            {node, Enum.map_join(parts, ".", &Atom.to_string/1)}
+          else
+            {node, nil}
+          end
+
+        node, acc ->
+          {node, acc}
+      end)
+
+    result || fallback_module_name("unknown")
+  end
+
+  defp fallback_module_name(path) do
     path
     |> Path.basename(".ex")
     |> Macro.camelize()
