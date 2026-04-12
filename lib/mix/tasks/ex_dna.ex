@@ -57,6 +57,10 @@ defmodule Mix.Tasks.ExDna do
     max_clones = Keyword.get(opts, :max_clones)
     total = report.stats.total_clones
 
+    if max_clones && Keyword.get(opts, :format) != "json" do
+      IO.puts(["  Clone budget:       \#{total}/\#{max_clones}\n"])
+    end
+
     should_fail =
       if max_clones do
         total > max_clones
