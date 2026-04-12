@@ -15,6 +15,8 @@ defmodule ExDNA.AST.Normalizer do
      placeholders (`:$0`, `:$1`, …) based on first-occurrence order.
   3. **Literal abstraction** (optional) — replaces concrete literals with
      type-tagged placeholders to detect Type-II clones.
+  4. **Map/struct field sorting** (abstract mode) — sorts key-value pairs
+     so that `%{b: 1, a: 2}` and `%{a: 2, b: 1}` produce the same hash.
   """
 
   @type option :: {:literal_mode, :keep | :abstract} | {:normalize_pipes, boolean()}
@@ -87,6 +89,15 @@ defmodule ExDNA.AST.Normalizer do
   defp maybe_abstract_literals(ast, :keep), do: ast
   defp maybe_abstract_literals(ast, :abstract), do: abstract_walk(ast)
 
+  defp abstract_walk({:%, meta, [struct_name, {:%{}, map_meta, fields}]}) do
+    sorted = sort_fields(fields)
+    {:%, meta, [abstract_walk(struct_name), {:%{}, map_meta, sorted}]}
+  end
+
+  defp abstract_walk({:%{}, meta, fields}) when is_list(fields) do
+    {:%{}, meta, sort_fields(fields)}
+  end
+
   defp abstract_walk({form, meta, args}) when is_list(args) do
     {abstract_walk(form), meta, Enum.map(args, &abstract_walk/1)}
   end
@@ -107,4 +118,10 @@ defmodule ExDNA.AST.Normalizer do
   defp abstract_walk(float) when is_float(float), do: :__float__
   defp abstract_walk(str) when is_binary(str), do: :__string__
   defp abstract_walk(atom) when is_atom(atom), do: atom
+
+  defp sort_fields(fields) do
+    fields
+    |> Enum.map(fn {k, v} -> {k, abstract_walk(v)} end)
+    |> Enum.sort_by(fn {k, _v} -> k end)
+  end
 end

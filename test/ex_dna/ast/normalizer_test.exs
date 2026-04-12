@@ -90,6 +90,26 @@ defmodule ExDNA.AST.NormalizerTest do
       assert norm1 == norm2
     end
 
+    test "struct field order does not affect hash" do
+      ast1 = Code.string_to_quoted!(~s[%User{name: "a", age: 1}])
+      ast2 = Code.string_to_quoted!(~s[%User{age: 1, name: "a"}])
+
+      norm1 = Normalizer.normalize(ast1, literal_mode: :abstract)
+      norm2 = Normalizer.normalize(ast2, literal_mode: :abstract)
+
+      assert norm1 == norm2
+    end
+
+    test "map field order does not affect hash" do
+      ast1 = Code.string_to_quoted!("%{b: 2, a: 1}")
+      ast2 = Code.string_to_quoted!("%{a: 1, b: 2}")
+
+      norm1 = Normalizer.normalize(ast1, literal_mode: :abstract)
+      norm2 = Normalizer.normalize(ast2, literal_mode: :abstract)
+
+      assert norm1 == norm2
+    end
+
     test "preserves true/false/nil" do
       ast = Code.string_to_quoted!("true && false || nil")
       norm = Normalizer.normalize(ast, literal_mode: :abstract)
