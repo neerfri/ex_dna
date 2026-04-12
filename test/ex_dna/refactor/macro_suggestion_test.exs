@@ -66,6 +66,23 @@ defmodule ExDNA.Refactor.MacroSuggestionTest do
       refute MacroSuggestion.macro_candidate?(clone)
     end
 
+    test "detects DSL call even when followed by non-DSL calls" do
+      ast =
+        quote do
+          field(:name, :string)
+          validate_required([:name])
+        end
+
+      clone = %Clone{
+        type: :type_i,
+        hash: "x",
+        mass: 8,
+        fragments: for(f <- ~w(a.ex b.ex c.ex), do: %{file: f, line: 1, ast: ast, mass: 8})
+      }
+
+      assert MacroSuggestion.macro_candidate?(clone)
+    end
+
     test "returns false for plain function calls without DSL or struct content" do
       ast =
         quote do

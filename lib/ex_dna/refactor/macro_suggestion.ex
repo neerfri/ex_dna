@@ -53,8 +53,8 @@ defmodule ExDNA.Refactor.MacroSuggestion do
   defp has_dsl_call?(ast) do
     {_, found} =
       Macro.prewalk(ast, false, fn
-        {name, _, args} = node, _acc when is_atom(name) and is_list(args) ->
-          if name in @dsl_calls, do: {node, true}, else: {node, false}
+        {name, _, args} = node, acc when is_atom(name) and is_list(args) ->
+          if name in @dsl_calls, do: {node, true}, else: {node, acc}
 
         node, acc ->
           {node, acc}
