@@ -20,7 +20,7 @@ defmodule ExDNA.Compiler do
   use Mix.Task.Compiler
 
   alias ExDNA.{Cache, Config}
-  alias ExDNA.Detection.{Filter, Pipeline}
+  alias ExDNA.Detection.{Detector, Pipeline}
 
   @impl true
   def run(_argv) do
@@ -34,23 +34,32 @@ defmodule ExDNA.Compiler do
     fresh_entries =
       stale
       |> Task.async_stream(
-        fn file -> {file, Pipeline.parse_and_fingerprint(file, config)} end,
+        fn file ->
+          with {:ok, source} <- File.read(file),
+               {:ok, ast} <- Pipeline.parse_with_timeout(source, file, config.parse_timeout) do
+            frags = Pipeline.fingerprint_ast(ast, file, config)
+            {file, Cache.build_entry(file, frags, ast)}
+          else
+            _ -> {file, Cache.build_entry(file, [], nil)}
+          end
+        end,
         max_concurrency: System.schedulers_online(),
         ordered: false
       )
-      |> Map.new(fn {:ok, {file, frags}} -> {file, Cache.build_entry(file, frags)} end)
+      |> Map.new(fn {:ok, result} -> result end)
 
     merged = Cache.merge(cached, fresh_entries, files)
     Cache.write(merged, cache_path)
 
-    fragments = Enum.flat_map(merged, fn {_file, entry} -> entry.fragments end)
+    file_ast_pairs =
+      Enum.flat_map(merged, fn {file, entry} ->
+        case entry do
+          %{ast: ast} when ast != nil -> [{file, ast}]
+          _ -> []
+        end
+      end)
 
-    clones =
-      fragments
-      |> Pipeline.find_clones(:type_i)
-      |> Filter.prune_nested()
-      |> Enum.map(&Pipeline.attach_suggestion/1)
-      |> Enum.sort_by(& &1.mass, :desc)
+    clones = Detector.run(config, file_ast_pairs)
 
     diagnostics =
       Enum.flat_map(clones, fn clone ->

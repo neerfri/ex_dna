@@ -7,9 +7,9 @@ defmodule ExDNA.Cache do
   has changed need to be re-parsed and fingerprinted.
   """
 
-  @cache_version 1
+  @cache_version 2
 
-  @type entry :: %{mtime: integer(), fragments: [map()]}
+  @type entry :: %{mtime: integer(), fragments: [map()], ast: Macro.t() | nil}
   @type entries :: %{String.t() => entry()}
 
   @doc """
@@ -72,9 +72,9 @@ defmodule ExDNA.Cache do
   @doc """
   Build a cache entry for a single file with its current mtime.
   """
-  @spec build_entry(String.t(), [map()]) :: entry()
-  def build_entry(file, fragments) do
-    %{mtime: file_mtime(file), fragments: fragments}
+  @spec build_entry(String.t(), [map()], Macro.t() | nil) :: entry()
+  def build_entry(file, fragments, ast \\ nil) do
+    %{mtime: file_mtime(file), fragments: fragments, ast: ast}
   end
 
   @doc """
