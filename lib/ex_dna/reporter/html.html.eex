@@ -51,7 +51,7 @@
       <div class="clone-body">
         <div class="locations">
           <%= for frag <- clone.fragments do %>
-            <% path = relative_path(frag.file) %>
+            <% path = Path.relative_to_cwd(frag.file) %>
             <% label = if frag.line > 0, do: "#{path}:#{frag.line}", else: path %>
             <a class="location" href="<%= file_uri(frag.file, frag.line) %>"><%= escape(label) %></a>
           <% end %>

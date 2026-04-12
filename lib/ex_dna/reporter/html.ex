@@ -31,7 +31,7 @@ defmodule ExDNA.Reporter.HTML do
 
     call_sites =
       Enum.map_join(s.call_sites, "\n", fn site ->
-        ~s(<div class="call-site">#{escape(relative_path(site.file))}:#{site.line} → <code>#{escape(site.call)}</code></div>)
+        ~s(<div class="call-site">#{escape(Path.relative_to_cwd(site.file))}:#{site.line} → <code>#{escape(site.call)}</code></div>)
       end)
 
     """
@@ -89,13 +89,6 @@ defmodule ExDNA.Reporter.HTML do
   defp file_uri(path, line) do
     abs = Path.expand(path)
     if line > 0, do: "file://#{abs}#L#{line}", else: "file://#{abs}"
-  end
-
-  defp relative_path(path) do
-    case File.cwd() do
-      {:ok, cwd} -> Path.relative_to(path, cwd)
-      _ -> path
-    end
   end
 
   defp escape(text) do

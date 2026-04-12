@@ -77,8 +77,8 @@ defmodule ExDNA.Reporter.Console do
     Enum.each(clone.fragments, fn frag ->
       location =
         if frag.line > 0,
-          do: "#{relative_path(frag.file)}:#{frag.line}",
-          else: relative_path(frag.file)
+          do: "#{Path.relative_to_cwd(frag.file)}:#{frag.line}",
+          else: Path.relative_to_cwd(frag.file)
 
       IO.puts(["┃   ", IO.ANSI.cyan(), location, IO.ANSI.reset()])
     end)
@@ -145,7 +145,7 @@ defmodule ExDNA.Reporter.Console do
       IO.puts([
         "┃     ",
         IO.ANSI.faint(),
-        relative_path(site.file),
+        Path.relative_to_cwd(site.file),
         ":#{site.line} → #{site.call}",
         IO.ANSI.reset()
       ])
@@ -212,11 +212,4 @@ defmodule ExDNA.Reporter.Console do
 
   defp clone_color(0), do: IO.ANSI.green()
   defp clone_color(_), do: IO.ANSI.red()
-
-  defp relative_path(path) do
-    case File.cwd() do
-      {:ok, cwd} -> Path.relative_to(path, cwd)
-      _ -> path
-    end
-  end
 end

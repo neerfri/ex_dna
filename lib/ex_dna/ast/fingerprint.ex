@@ -41,7 +41,7 @@ defmodule ExDNA.AST.Fingerprint do
        when is_list(args) do
     acc =
       Enum.reduce(args, acc, fn child, a ->
-        elem(walk(child, file, min_mass, norm_opts, excluded, a), 1)
+        walk_acc(child, file, min_mass, norm_opts, excluded, a)
       end)
 
     acc = sibling_windows(args, file, min_mass, norm_opts, acc)
@@ -56,7 +56,7 @@ defmodule ExDNA.AST.Fingerprint do
     else
       acc =
         Enum.reduce(args, acc, fn child, a ->
-          elem(walk(child, file, min_mass, norm_opts, excluded, a), 1)
+          walk_acc(child, file, min_mass, norm_opts, excluded, a)
         end)
 
       mass = mass(node)
@@ -91,13 +91,18 @@ defmodule ExDNA.AST.Fingerprint do
   defp walk(list, file, min_mass, norm_opts, excluded, acc) when is_list(list) do
     acc =
       Enum.reduce(list, acc, fn item, a ->
-        elem(walk(item, file, min_mass, norm_opts, excluded, a), 1)
+        walk_acc(item, file, min_mass, norm_opts, excluded, a)
       end)
 
     {list, acc}
   end
 
   defp walk(leaf, _file, _min_mass, _norm_opts, _excluded, acc), do: {leaf, acc}
+
+  defp walk_acc(node, file, min_mass, norm_opts, excluded, acc) do
+    {_, acc} = walk(node, file, min_mass, norm_opts, excluded, acc)
+    acc
+  end
 
   defp sibling_windows(children, _file, _min_mass, _norm_opts, acc) when length(children) < 2,
     do: acc

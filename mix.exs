@@ -17,7 +17,10 @@ defmodule ExDNA.MixProject do
       docs: docs(),
       package: package(),
       aliases: aliases(),
-      dialyzer: [plt_file: {:no_warn, "_build/dev/dialyxir_plt.plt"}]
+      dialyzer: [
+        plt_file: {:no_warn, "_build/dev/dialyxir_plt.plt"},
+        plt_add_apps: [:mix, :credo]
+      ]
     ]
   end
 

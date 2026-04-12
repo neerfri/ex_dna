@@ -93,12 +93,7 @@ defmodule ExDNA.Detection.Grouper do
 
   defp directories_for(%Clone{fragments: fragments}) do
     fragments
-    |> Enum.map(fn frag ->
-      frag.file
-      |> Path.expand()
-      |> Path.dirname()
-      |> Path.relative_to_cwd()
-    end)
+    |> Enum.map(fn frag -> frag.file |> Path.dirname() |> Path.relative_to_cwd() end)
     |> Enum.uniq()
     |> Enum.sort()
   end
