@@ -31,24 +31,32 @@ defmodule ExDNA.Refactor.BehaviourSuggestionTest do
     {:defp, [line: 1], [{name, [line: 1], args}, [do: {:ok, [], nil}]]}
   end
 
-  describe "suggest/1" do
+  defp write_and_parse(dir, name, content) do
+    path = Path.join(dir, name)
+    File.write!(path, content)
+    {:ok, ast} = Code.string_to_quoted(content, line: 1, columns: true, file: path)
+    {path, ast}
+  end
+
+  describe "suggest/2" do
     test "suggests behaviour for identical defs in different files", %{dir: dir} do
       ast = def_ast(:validate, 1)
 
-      file_a = Path.join(dir, "bank_complaint.ex")
-      file_b = Path.join(dir, "mfo_complaint.ex")
+      {file_a, ast_a} =
+        write_and_parse(dir, "bank_complaint.ex", """
+        defmodule MyApp.BankComplaint do
+          def validate(data), do: {:ok, data}
+        end
+        """)
 
-      File.write!(file_a, """
-      defmodule MyApp.BankComplaint do
-        def validate(data), do: {:ok, data}
-      end
-      """)
+      {file_b, ast_b} =
+        write_and_parse(dir, "mfo_complaint.ex", """
+        defmodule MyApp.MFOComplaint do
+          def validate(data), do: {:ok, data}
+        end
+        """)
 
-      File.write!(file_b, """
-      defmodule MyApp.MFOComplaint do
-        def validate(data), do: {:ok, data}
-      end
-      """)
+      file_asts = %{file_a => ast_a, file_b => ast_b}
 
       clone = %Clone{
         type: :type_i,
@@ -60,7 +68,7 @@ defmodule ExDNA.Refactor.BehaviourSuggestionTest do
         ]
       }
 
-      suggestion = BehaviourSuggestion.suggest(clone)
+      suggestion = BehaviourSuggestion.suggest(clone, file_asts)
 
       assert %BehaviourSuggestion{} = suggestion
       assert suggestion.callback_name == :validate
@@ -69,14 +77,47 @@ defmodule ExDNA.Refactor.BehaviourSuggestionTest do
       assert "MyApp.MFOComplaint" in suggestion.modules
     end
 
+    test "resolves nested modules correctly", %{dir: dir} do
+      ast = def_ast(:run, 0)
+
+      {file, file_ast} =
+        write_and_parse(dir, "outer.ex", """
+        defmodule Outer do
+          defmodule Inner do
+            def run, do: :ok
+          end
+
+          defmodule Other do
+            def run, do: :ok
+          end
+        end
+        """)
+
+      clone = %Clone{
+        type: :type_i,
+        hash: "x",
+        mass: 8,
+        fragments: [
+          %{file: file, line: 3, ast: ast, mass: 8},
+          %{file: file, line: 7, ast: ast, mass: 8}
+        ]
+      }
+
+      suggestion = BehaviourSuggestion.suggest(clone, %{file => file_ast})
+
+      assert %BehaviourSuggestion{} = suggestion
+      assert "Outer.Inner" in suggestion.modules
+      assert "Outer.Other" in suggestion.modules
+    end
+
     test "suggests behaviour for zero-arity defs", %{dir: dir} do
       ast = def_ast(:defaults, 0)
 
-      file_a = Path.join(dir, "http_client.ex")
-      file_b = Path.join(dir, "grpc_client.ex")
+      {file_a, ast_a} =
+        write_and_parse(dir, "http.ex", "defmodule HttpClient do\n  def defaults, do: []\nend\n")
 
-      File.write!(file_a, "defmodule HttpClient do\n  def defaults, do: []\nend\n")
-      File.write!(file_b, "defmodule GrpcClient do\n  def defaults, do: []\nend\n")
+      {file_b, ast_b} =
+        write_and_parse(dir, "grpc.ex", "defmodule GrpcClient do\n  def defaults, do: []\nend\n")
 
       clone = %Clone{
         type: :type_i,
@@ -88,7 +129,7 @@ defmodule ExDNA.Refactor.BehaviourSuggestionTest do
         ]
       }
 
-      suggestion = BehaviourSuggestion.suggest(clone)
+      suggestion = BehaviourSuggestion.suggest(clone, %{file_a => ast_a, file_b => ast_b})
       assert suggestion.callback_name == :defaults
       assert suggestion.callback_arity == 0
     end
@@ -129,20 +170,28 @@ defmodule ExDNA.Refactor.BehaviourSuggestionTest do
       assert BehaviourSuggestion.suggest(clone) == nil
     end
 
-    test "returns nil when all fragments come from the same file" do
+    test "returns nil when all fragments come from the same module", %{dir: dir} do
       ast = def_ast(:validate, 1)
+
+      {file, file_ast} =
+        write_and_parse(dir, "complaint.ex", """
+        defmodule Complaint do
+          def validate(a), do: a
+          def validate(b), do: b
+        end
+        """)
 
       clone = %Clone{
         type: :type_i,
         hash: "x",
         mass: 10,
         fragments: [
-          %{file: "lib/complaint.ex", line: 10, ast: ast, mass: 10},
-          %{file: "lib/complaint.ex", line: 30, ast: ast, mass: 10}
+          %{file: file, line: 2, ast: ast, mass: 10},
+          %{file: file, line: 3, ast: ast, mass: 10}
         ]
       }
 
-      assert BehaviourSuggestion.suggest(clone) == nil
+      assert BehaviourSuggestion.suggest(clone, %{file => file_ast}) == nil
     end
 
     test "returns nil for fewer than 2 fragments" do
@@ -161,11 +210,19 @@ defmodule ExDNA.Refactor.BehaviourSuggestionTest do
     test "works with defp as well as def", %{dir: dir} do
       ast = defp_ast(:transform, 1)
 
-      file_a = Path.join(dir, "parser_a.ex")
-      file_b = Path.join(dir, "parser_b.ex")
+      {file_a, ast_a} =
+        write_and_parse(
+          dir,
+          "parser_a.ex",
+          "defmodule ParserA do\n  defp transform(x), do: x\nend\n"
+        )
 
-      File.write!(file_a, "defmodule ParserA do\n  defp transform(x), do: x\nend\n")
-      File.write!(file_b, "defmodule ParserB do\n  defp transform(x), do: x\nend\n")
+      {file_b, ast_b} =
+        write_and_parse(
+          dir,
+          "parser_b.ex",
+          "defmodule ParserB do\n  defp transform(x), do: x\nend\n"
+        )
 
       clone = %Clone{
         type: :type_i,
@@ -177,7 +234,7 @@ defmodule ExDNA.Refactor.BehaviourSuggestionTest do
         ]
       }
 
-      suggestion = BehaviourSuggestion.suggest(clone)
+      suggestion = BehaviourSuggestion.suggest(clone, %{file_a => ast_a, file_b => ast_b})
       assert suggestion.callback_name == :transform
       assert suggestion.callback_arity == 1
     end
@@ -185,11 +242,19 @@ defmodule ExDNA.Refactor.BehaviourSuggestionTest do
     test "preserves acronyms in module names", %{dir: dir} do
       ast = def_ast(:run, 0)
 
-      file_a = Path.join(dir, "http_api.ex")
-      file_b = Path.join(dir, "grpc_api.ex")
+      {file_a, ast_a} =
+        write_and_parse(
+          dir,
+          "http_api.ex",
+          "defmodule MyApp.HTTPAPI do\n  def run, do: :ok\nend\n"
+        )
 
-      File.write!(file_a, "defmodule MyApp.HTTPAPI do\n  def run, do: :ok\nend\n")
-      File.write!(file_b, "defmodule MyApp.GRPCAPI do\n  def run, do: :ok\nend\n")
+      {file_b, ast_b} =
+        write_and_parse(
+          dir,
+          "grpc_api.ex",
+          "defmodule MyApp.GRPCAPI do\n  def run, do: :ok\nend\n"
+        )
 
       clone = %Clone{
         type: :type_i,
@@ -201,21 +266,21 @@ defmodule ExDNA.Refactor.BehaviourSuggestionTest do
         ]
       }
 
-      suggestion = BehaviourSuggestion.suggest(clone)
+      suggestion = BehaviourSuggestion.suggest(clone, %{file_a => ast_a, file_b => ast_b})
       assert "MyApp.HTTPAPI" in suggestion.modules
       assert "MyApp.GRPCAPI" in suggestion.modules
     end
   end
 
-  describe "analyze/1" do
+  describe "analyze/2" do
     test "attaches behaviour_suggestion to qualifying clones", %{dir: dir} do
       ast = def_ast(:validate, 1)
 
-      file_a = Path.join(dir, "bank.ex")
-      file_b = Path.join(dir, "mfo.ex")
+      {file_a, ast_a} =
+        write_and_parse(dir, "bank.ex", "defmodule Bank do\n  def validate(d), do: d\nend\n")
 
-      File.write!(file_a, "defmodule Bank do\n  def validate(d), do: d\nend\n")
-      File.write!(file_b, "defmodule MFO do\n  def validate(d), do: d\nend\n")
+      {file_b, ast_b} =
+        write_and_parse(dir, "mfo.ex", "defmodule MFO do\n  def validate(d), do: d\nend\n")
 
       clones = [
         %Clone{
@@ -229,7 +294,7 @@ defmodule ExDNA.Refactor.BehaviourSuggestionTest do
         }
       ]
 
-      [clone] = BehaviourSuggestion.analyze(clones)
+      [clone] = BehaviourSuggestion.analyze(clones, %{file_a => ast_a, file_b => ast_b})
       assert %BehaviourSuggestion{} = clone.behaviour_suggestion
       assert clone.behaviour_suggestion.callback_name == :validate
     end
@@ -254,6 +319,55 @@ defmodule ExDNA.Refactor.BehaviourSuggestionTest do
 
       [clone] = BehaviourSuggestion.analyze(clones)
       assert clone.behaviour_suggestion == nil
+    end
+  end
+
+  describe "find_enclosing_module/2" do
+    test "finds single module" do
+      {:ok, ast} =
+        Code.string_to_quoted("""
+        defmodule MyApp.Users do
+          def list, do: []
+        end
+        """)
+
+      assert BehaviourSuggestion.find_enclosing_module(ast, 2) == "MyApp.Users"
+    end
+
+    test "finds nested module" do
+      {:ok, ast} =
+        Code.string_to_quoted("""
+        defmodule MyApp do
+          defmodule Users do
+            def list, do: []
+          end
+        end
+        """)
+
+      assert BehaviourSuggestion.find_enclosing_module(ast, 3) == "MyApp.Users"
+    end
+
+    test "distinguishes sibling modules" do
+      {:ok, ast} =
+        Code.string_to_quoted("""
+        defmodule MyApp do
+          defmodule Users do
+            def list, do: []
+          end
+
+          defmodule Posts do
+            def list, do: []
+          end
+        end
+        """)
+
+      assert BehaviourSuggestion.find_enclosing_module(ast, 3) == "MyApp.Users"
+      assert BehaviourSuggestion.find_enclosing_module(ast, 7) == "MyApp.Posts"
+    end
+
+    test "returns nil for line outside any module" do
+      {:ok, ast} = Code.string_to_quoted("x = 1")
+      assert BehaviourSuggestion.find_enclosing_module(ast, 1) == nil
     end
   end
 end

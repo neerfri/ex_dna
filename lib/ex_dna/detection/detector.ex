@@ -63,7 +63,7 @@ defmodule ExDNA.Detection.Detector do
 
     (exact_clones ++ type_iii_clones)
     |> Enum.map(&Pipeline.attach_suggestion/1)
-    |> BehaviourSuggestion.analyze()
+    |> BehaviourSuggestion.analyze(Map.new(file_ast_pairs))
     |> Enum.sort_by(& &1.mass, :desc)
   end
 

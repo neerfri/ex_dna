@@ -20,12 +20,13 @@ defmodule ExDNA.Refactor.BehaviourSuggestion do
   @doc """
   Analyze a list of clones and attach behaviour suggestions where appropriate.
 
-  Returns the clone list with `behaviour_suggestion` populated on qualifying clones.
+  Accepts an optional map of `%{file_path => ast}` to resolve module names
+  without re-reading files from disk.
   """
-  @spec analyze([Clone.t()]) :: [Clone.t()]
-  def analyze(clones) do
+  @spec analyze([Clone.t()], %{String.t() => Macro.t()}) :: [Clone.t()]
+  def analyze(clones, file_asts \\ %{}) do
     Enum.map(clones, fn clone ->
-      case suggest(clone) do
+      case suggest(clone, file_asts) do
         nil -> clone
         suggestion -> %{clone | behaviour_suggestion: suggestion}
       end
@@ -35,13 +36,15 @@ defmodule ExDNA.Refactor.BehaviourSuggestion do
   @doc """
   Generate a behaviour suggestion for a single clone, or nil.
   """
-  @spec suggest(Clone.t()) :: t() | nil
-  def suggest(%Clone{fragments: frags}) when length(frags) < 2, do: nil
+  @spec suggest(Clone.t(), %{String.t() => Macro.t()}) :: t() | nil
+  def suggest(clone, file_asts \\ %{})
 
-  def suggest(%Clone{fragments: frags}) do
+  def suggest(%Clone{fragments: frags}, _file_asts) when length(frags) < 2, do: nil
+
+  def suggest(%Clone{fragments: frags}, file_asts) do
     with true <- all_defs?(frags),
          {name, arity} <- shared_name_arity(frags),
-         modules when length(modules) >= 2 <- distinct_modules(frags) do
+         modules when length(modules) >= 2 <- distinct_modules(frags, file_asts) do
       %__MODULE__{
         callback_name: name,
         callback_arity: arity,
@@ -79,43 +82,112 @@ defmodule ExDNA.Refactor.BehaviourSuggestion do
 
   defp extract_name_arity(_), do: nil
 
-  defp distinct_modules(frags) do
+  defp distinct_modules(frags, file_asts) do
     frags
-    |> Enum.map(fn frag -> module_for_fragment(frag.file, frag.line) end)
+    |> Enum.map(fn frag -> module_for_fragment(frag.file, frag.line, file_asts) end)
     |> Enum.uniq()
   end
 
-  defp module_for_fragment(file, line) do
-    case File.read(file) do
-      {:ok, source} ->
-        case Code.string_to_quoted(source, line: 1, columns: true, file: file) do
-          {:ok, ast} -> find_enclosing_module(ast, line)
-          _ -> fallback_module_name(file)
-        end
+  defp module_for_fragment(file, line, file_asts) do
+    ast =
+      case Map.fetch(file_asts, file) do
+        {:ok, ast} -> ast
+        :error -> read_and_parse(file)
+      end
 
-      _ ->
-        fallback_module_name(file)
+    case ast do
+      nil -> fallback_module_name(file)
+      ast -> find_enclosing_module(ast, line) || fallback_module_name(file)
     end
   end
 
-  defp find_enclosing_module(ast, target_line) do
-    {_, result} =
-      Macro.prewalk(ast, nil, fn
-        {:defmodule, meta, [{:__aliases__, _, parts} | _]} = node, _acc ->
-          module_line = Keyword.get(meta, :line, 0)
-
-          if module_line <= target_line do
-            {node, Enum.map_join(parts, ".", &Atom.to_string/1)}
-          else
-            {node, nil}
-          end
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    result || fallback_module_name("unknown")
+  defp read_and_parse(file) do
+    with {:ok, source} <- File.read(file),
+         {:ok, ast} <- Code.string_to_quoted(source, line: 1, columns: true, file: file) do
+      ast
+    else
+      _ -> nil
+    end
   end
+
+  @doc false
+  @spec find_enclosing_module(Macro.t(), pos_integer()) :: String.t() | nil
+  def find_enclosing_module(ast, target_line) do
+    ast
+    |> collect_module_ranges([], [])
+    |> Enum.filter(fn {_name, start_line, end_line} ->
+      target_line >= start_line and target_line <= end_line
+    end)
+    |> Enum.max_by(fn {_name, start_line, _end_line} -> start_line end, fn -> nil end)
+    |> case do
+      {name, _, _} -> name
+      nil -> nil
+    end
+  end
+
+  defp collect_module_ranges(
+         {:defmodule, meta, [{:__aliases__, _, parts} | rest]},
+         parent_parts,
+         acc
+       ) do
+    start_line = Keyword.get(meta, :line, 0)
+    full_parts = parent_parts ++ parts
+    name = Enum.map_join(full_parts, ".", &Atom.to_string/1)
+
+    end_line = max_line_in(rest, start_line)
+
+    acc = [{name, start_line, end_line} | acc]
+
+    body = extract_body(rest)
+    collect_children(body, full_parts, acc)
+  end
+
+  defp collect_module_ranges({_form, _meta, args}, parent, acc) when is_list(args) do
+    collect_children(args, parent, acc)
+  end
+
+  defp collect_module_ranges(list, parent, acc) when is_list(list) do
+    collect_children(list, parent, acc)
+  end
+
+  defp collect_module_ranges(_leaf, _parent, acc), do: acc
+
+  defp collect_children(children, parent, acc) when is_list(children) do
+    Enum.reduce(children, acc, fn child, a -> collect_module_ranges(child, parent, a) end)
+  end
+
+  defp collect_children(child, parent, acc), do: collect_module_ranges(child, parent, acc)
+
+  defp extract_body([[do: {:__block__, _, body}]]), do: body
+  defp extract_body([[do: body]]), do: [body]
+  defp extract_body(_), do: []
+
+  defp max_line_in(node, default) do
+    {_, max} = do_max_line(node, default)
+    max
+  end
+
+  defp do_max_line({_form, meta, args}, max) when is_list(args) do
+    line = Keyword.get(meta, :line, 0)
+    max = max(line, max)
+    Enum.reduce(args, {nil, max}, fn child, {_, m} -> do_max_line(child, m) end)
+  end
+
+  defp do_max_line({_form, meta, ctx}, max) when is_atom(ctx) do
+    line = Keyword.get(meta, :line, 0)
+    {nil, max(line, max)}
+  end
+
+  defp do_max_line({left, right}, max) do
+    {_, max} = do_max_line(left, max)
+    do_max_line(right, max)
+  end
+
+  defp do_max_line(list, max) when is_list(list) do
+    Enum.reduce(list, {nil, max}, fn item, {_, m} -> do_max_line(item, m) end)
+  end
+
+  defp do_max_line(_leaf, max), do: {nil, max}
 
   defp fallback_module_name(path) do
     path
