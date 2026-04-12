@@ -1,48 +1,76 @@
 defmodule ExDNA.Detection.Fuzzy do
   @moduledoc """
-  Type-III (near-miss) clone detection using characteristic vectors.
+  Type-III (near-miss) clone detection using sub-hash Jaccard similarity.
 
-  Uses DECKARD-style characteristic vectors for fast candidate pre-filtering,
-  then verifies with tree edit distance. Fragments are grouped by mass range
-  to limit comparisons, then cosine similarity on structural vectors prunes
-  pairs before expensive tree comparison.
+  Each candidate fragment is characterized by its set of sub-subtree hashes
+  (all hashes from children that were fingerprinted). Jaccard similarity
+  between hash sets is a cheap, effective pre-filter that correlates well
+  with actual tree edit distance — unlike cosine similarity on node-type
+  frequencies which is too coarse for Elixir ASTs.
+
+  Fragments are grouped by mass range to limit comparisons, then pairs
+  passing the Jaccard pre-filter are verified with tree edit distance.
   """
 
-  alias ExDNA.AST.{CharacteristicVector, EditDistance, Normalizer}
+  alias ExDNA.AST.{EditDistance, Fingerprint, Normalizer}
   alias ExDNA.Detection.Clone
 
   @mass_tolerance 0.3
-  @cosine_threshold 0.7
-  @max_candidates 2000
+  @jaccard_threshold 0.3
+  @sub_hash_min_mass 5
 
   @doc """
   Find Type-III clones from a list of fragments at the given similarity threshold.
-
-  Returns clone structs for every pair above the threshold that isn't
-  already an exact match.
   """
   @spec detect([map()], float(), MapSet.t()) :: [Clone.t()]
   def detect(fragments, min_similarity, exact_hashes) do
     fragments
     |> Enum.reject(fn f -> MapSet.member?(exact_hashes, f.hash) end)
     |> Enum.sort_by(& &1.mass, :desc)
-    |> Enum.take(@max_candidates)
-    |> attach_vectors()
+    |> attach_sub_hashes()
     |> group_by_mass_bucket()
     |> Enum.flat_map(fn bucket -> find_pairs_in_bucket(bucket, min_similarity) end)
     |> deduplicate_pairs()
     |> Enum.map(&pair_to_clone/1)
   end
 
-  defp attach_vectors(fragments) do
+  defp attach_sub_hashes(fragments) do
     Enum.map(fragments, fn frag ->
-      Map.put(frag, :vector, CharacteristicVector.compute(frag.ast))
+      sub_hashes = collect_sub_hashes(frag.ast) |> MapSet.new()
+      Map.put(frag, :sub_hashes, sub_hashes)
     end)
   end
 
+  defp collect_sub_hashes(ast) do
+    {_ast, hashes} = do_collect(ast, [])
+    hashes
+  end
+
+  defp do_collect({form, _meta, args} = node, acc) when is_atom(form) and is_list(args) do
+    acc = Enum.reduce(args, acc, fn child, a -> elem(do_collect(child, a), 1) end)
+
+    if Fingerprint.mass(node) >= @sub_hash_min_mass do
+      stripped = Normalizer.strip_metadata(node)
+      hash = :erlang.phash2(stripped)
+      {node, [hash | acc]}
+    else
+      {node, acc}
+    end
+  end
+
+  defp do_collect({left, right}, acc) do
+    {_, acc} = do_collect(left, acc)
+    {nil, elem(do_collect(right, acc), 1)}
+  end
+
+  defp do_collect(list, acc) when is_list(list) do
+    {nil, Enum.reduce(list, acc, fn item, a -> elem(do_collect(item, a), 1) end)}
+  end
+
+  defp do_collect(leaf, acc), do: {leaf, acc}
+
   defp group_by_mass_bucket(fragments) do
     fragments
-    |> Enum.sort_by(& &1.mass, :desc)
     |> Enum.chunk_by(fn f -> div(f.mass, 10) end)
     |> merge_adjacent_buckets()
   end
@@ -58,20 +86,26 @@ defmodule ExDNA.Detection.Fuzzy do
   defp find_pairs_in_bucket(bucket, min_similarity) do
     indexed = Enum.with_index(bucket)
 
+    # Pre-normalize all ASTs once
+    norms = Map.new(indexed, fn {frag, idx} -> {idx, Normalizer.normalize(frag.ast)} end)
+
     for {frag_a, i} <- indexed,
         {frag_b, j} <- indexed,
         j > i,
         mass_compatible?(frag_a, frag_b),
         not same_location?(frag_a, frag_b),
-        cosine_compatible?(frag_a, frag_b),
-        sim = compute_similarity(frag_a, frag_b),
+        jaccard_compatible?(frag_a, frag_b),
+        sim = EditDistance.similarity(norms[i], norms[j]),
         sim >= min_similarity do
       {frag_a, frag_b, sim}
     end
   end
 
-  defp cosine_compatible?(frag_a, frag_b) do
-    CharacteristicVector.cosine_similarity(frag_a.vector, frag_b.vector) >= @cosine_threshold
+  defp jaccard_compatible?(a, b) do
+    intersection = MapSet.intersection(a.sub_hashes, b.sub_hashes) |> MapSet.size()
+    union = MapSet.union(a.sub_hashes, b.sub_hashes) |> MapSet.size()
+
+    if union == 0, do: false, else: intersection / union >= @jaccard_threshold
   end
 
   defp mass_compatible?(a, b) do
@@ -81,12 +115,6 @@ defmodule ExDNA.Detection.Fuzzy do
 
   defp same_location?(a, b) do
     a.file == b.file and a.line == b.line
-  end
-
-  defp compute_similarity(frag_a, frag_b) do
-    norm_a = Normalizer.normalize(frag_a.ast)
-    norm_b = Normalizer.normalize(frag_b.ast)
-    EditDistance.similarity(norm_a, norm_b)
   end
 
   defp deduplicate_pairs(pairs) do
