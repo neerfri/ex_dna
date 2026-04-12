@@ -2,12 +2,15 @@ defmodule ExDNA.Cache do
   @moduledoc """
   Persistent cache for fingerprinted AST fragments.
 
-  Stores `%{file_path => %{mtime: integer(), fragments: [fragment], ast: Macro.t() | nil}}` to disk
-  using `:erlang.term_to_binary/1`. On subsequent runs, only files whose mtime
-  has changed need to be re-parsed and fingerprinted.
+  Stores `%{file_path => %{mtime: integer(), fragments: [fragment], ast: Macro.t() | nil}}`
+  to disk. On subsequent runs, only files whose mtime has changed need to be
+  re-parsed and fingerprinted.
+
+  The cache is invalidated when the config changes (min_mass, literal_mode,
+  normalize_pipes, excluded_macros) since these affect fingerprint output.
   """
 
-  @cache_version 2
+  @cache_version 3
 
   @type entry :: %{mtime: integer(), fragments: [map()], ast: Macro.t() | nil}
   @type entries :: %{String.t() => entry()}
@@ -20,12 +23,12 @@ defmodule ExDNA.Cache do
 
   @doc """
   Read cached entries from disk. Returns an empty map if the file is missing,
-  corrupt, or was written by an incompatible cache version.
+  corrupt, config has changed, or was written by an incompatible cache version.
   """
-  @spec read(String.t()) :: entries()
-  def read(path \\ default_path()) do
+  @spec read(String.t(), binary()) :: entries()
+  def read(path \\ default_path(), config_hash \\ <<>>) do
     with {:ok, binary} <- File.read(path),
-         {:ok, {@cache_version, entries}} <- safe_binary_to_term(binary) do
+         {:ok, {@cache_version, ^config_hash, entries}} <- safe_binary_to_term(binary) do
       entries
     else
       _ -> %{}
@@ -35,10 +38,20 @@ defmodule ExDNA.Cache do
   @doc """
   Write entries to the cache file.
   """
-  @spec write(entries(), String.t()) :: :ok | {:error, term()}
-  def write(entries, path \\ default_path()) do
-    binary = :erlang.term_to_binary({@cache_version, entries})
+  @spec write(entries(), String.t(), binary()) :: :ok | {:error, term()}
+  def write(entries, path \\ default_path(), config_hash \\ <<>>) do
+    binary = :erlang.term_to_binary({@cache_version, config_hash, entries})
     File.write(path, binary)
+  end
+
+  @doc """
+  Compute a fingerprint of config fields that affect cached fragments.
+  """
+  @spec config_hash(ExDNA.Config.t()) :: binary()
+  def config_hash(config) do
+    {config.min_mass, config.literal_mode, config.normalize_pipes, config.excluded_macros}
+    |> :erlang.term_to_binary()
+    |> then(&:erlang.md5/1)
   end
 
   @doc """
@@ -89,7 +102,7 @@ defmodule ExDNA.Cache do
   end
 
   defp safe_binary_to_term(binary) do
-    {:ok, :erlang.binary_to_term(binary)}
+    {:ok, :erlang.binary_to_term(binary, [:safe])}
   rescue
     ArgumentError -> :error
   end

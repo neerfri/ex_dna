@@ -88,6 +88,7 @@ if Code.ensure_loaded?(Credo.Check) do
 
       config
       |> Detector.run(file_ast_pairs)
+      |> elem(0)
       |> Enum.each(&append_issues(&1, exec, source_file_index, params))
 
       :ok

@@ -71,7 +71,7 @@ if Code.ensure_loaded?(GenLSP) do
              change: TextDocumentSyncKind.full()
            }
          },
-         server_info: %{name: "ExDNA", version: "1.0.0"}
+         server_info: %{name: "ExDNA", version: to_string(Application.spec(:ex_dna, :vsn))}
        }, assign(lsp, root_uri: root_uri)}
     end
 
@@ -97,7 +97,7 @@ if Code.ensure_loaded?(GenLSP) do
     end
 
     def handle_notification(%Exit{}, lsp) do
-      System.halt(0)
+      System.stop(0)
       {:noreply, lsp}
     end
 
@@ -110,7 +110,7 @@ if Code.ensure_loaded?(GenLSP) do
       root_path = uri_to_path(assigns.root_uri)
       overrides = Map.get(assigns, :config_overrides, [])
       config = Config.new(overrides ++ [paths: [root_path], reporters: []])
-      clones = Detector.run(config)
+      {clones, _} = Detector.run(config)
 
       diagnostics_by_file = build_diagnostics(clones)
 
@@ -156,9 +156,14 @@ if Code.ensure_loaded?(GenLSP) do
         end)
 
       Enum.map(clone.fragments, fn frag ->
+        frag_location =
+          if frag.line > 0,
+            do: "#{Path.relative_to_cwd(frag.file)}:#{frag.line}",
+            else: Path.relative_to_cwd(frag.file)
+
         others =
           other_locations
-          |> Enum.reject(&String.starts_with?(&1, Path.relative_to_cwd(frag.file)))
+          |> Enum.reject(&(&1 == frag_location))
           |> Enum.join(", ")
 
         line = max(frag.line, 1)

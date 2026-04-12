@@ -44,7 +44,7 @@ defmodule ExDNA.Detection.DetectorTest do
       """)
 
       config = Config.new(paths: [dir], min_mass: 5, reporters: [])
-      clones = Detector.run(config)
+      {clones, _} = Detector.run(config)
 
       assert clones != []
 
@@ -79,7 +79,7 @@ defmodule ExDNA.Detection.DetectorTest do
       """)
 
       config = Config.new(paths: [dir], min_mass: 5, reporters: [])
-      clones = Detector.run(config)
+      {clones, _} = Detector.run(config)
 
       assert clones != []
     end
@@ -98,7 +98,7 @@ defmodule ExDNA.Detection.DetectorTest do
       """)
 
       config = Config.new(paths: [dir], min_mass: 10, reporters: [])
-      clones = Detector.run(config)
+      {clones, _} = Detector.run(config)
 
       assert clones == []
     end
@@ -128,7 +128,7 @@ defmodule ExDNA.Detection.DetectorTest do
           reporters: []
         )
 
-      clones = Detector.run(config)
+      {clones, _} = Detector.run(config)
       assert clones == []
     end
 
@@ -154,7 +154,7 @@ defmodule ExDNA.Detection.DetectorTest do
       """)
 
       config = Config.new(paths: [dir], min_mass: 5, reporters: [])
-      clones = Detector.run(config)
+      {clones, _} = Detector.run(config)
 
       assert clones != []
     end
@@ -183,11 +183,11 @@ defmodule ExDNA.Detection.DetectorTest do
       config_without =
         Config.new(paths: [dir], min_mass: 5, reporters: [], normalize_pipes: false)
 
-      clones_without = Detector.run(config_without)
+      {clones_without, _} = Detector.run(config_without)
       pipe_body_clones = Enum.filter(clones_without, fn c -> c.mass >= 15 end)
 
       config_with = Config.new(paths: [dir], min_mass: 5, reporters: [], normalize_pipes: true)
-      clones_with = Detector.run(config_with)
+      {clones_with, _} = Detector.run(config_with)
       pipe_body_clones_with = Enum.filter(clones_with, fn c -> c.mass >= 15 end)
 
       assert length(pipe_body_clones_with) > length(pipe_body_clones)
@@ -221,7 +221,7 @@ defmodule ExDNA.Detection.DetectorTest do
       config_without =
         Config.new(paths: [dir], min_mass: 3, reporters: [], excluded_macros: [])
 
-      clones_without = Detector.run(config_without)
+      {clones_without, _} = Detector.run(config_without)
 
       schema_clones =
         Enum.filter(clones_without, fn c ->
@@ -231,7 +231,7 @@ defmodule ExDNA.Detection.DetectorTest do
       config_with =
         Config.new(paths: [dir], min_mass: 3, reporters: [], excluded_macros: [:schema, :field])
 
-      clones_with = Detector.run(config_with)
+      {clones_with, _} = Detector.run(config_with)
 
       field_clones_with =
         Enum.filter(clones_with, fn c ->
@@ -256,7 +256,7 @@ defmodule ExDNA.Detection.DetectorTest do
       """)
 
       config = Config.new(paths: [dir], min_mass: 5, reporters: [])
-      clones = Detector.run(config)
+      {clones, _} = Detector.run(config)
 
       assert is_list(clones)
     end
@@ -288,7 +288,7 @@ defmodule ExDNA.Detection.DetectorTest do
       """)
 
       config = Config.new(paths: [dir], min_mass: 5, reporters: [])
-      clones = Detector.run(config)
+      {clones, _} = Detector.run(config)
 
       # The annotated def in CloneB should not produce fragments,
       # so no clone pair at the `def process` level should be found.
@@ -329,10 +329,10 @@ defmodule ExDNA.Detection.DetectorTest do
       """)
 
       config_exact = Config.new(paths: [dir], min_mass: 5, reporters: [])
-      exact_clones = Detector.run(config_exact)
+      {exact_clones, _} = Detector.run(config_exact)
 
       config_fuzzy = Config.new(paths: [dir], min_mass: 5, min_similarity: 0.7, reporters: [])
-      fuzzy_clones = Detector.run(config_fuzzy)
+      {fuzzy_clones, _} = Detector.run(config_fuzzy)
 
       type_iii = Enum.filter(fuzzy_clones, &(&1.type == :type_iii))
       exact_only = Enum.filter(exact_clones, &(&1.type == :type_i))
@@ -359,7 +359,7 @@ defmodule ExDNA.Detection.DetectorTest do
       """)
 
       config = Config.new(paths: [dir], min_mass: 30, reporters: [])
-      clones = Detector.run(config)
+      {clones, _} = Detector.run(config)
 
       format_clones =
         Enum.filter(clones, fn c ->
@@ -401,7 +401,7 @@ defmodule ExDNA.Detection.DetectorTest do
       """)
 
       config = Config.new(paths: [dir], min_mass: 5, reporters: [])
-      clones = Detector.run(config)
+      {clones, _} = Detector.run(config)
 
       convert_clones =
         Enum.filter(clones, fn c ->
@@ -455,7 +455,7 @@ defmodule ExDNA.Detection.DetectorTest do
       """)
 
       config = Config.new(paths: [dir], min_mass: 5, reporters: [])
-      clones = Detector.run(config)
+      {clones, _} = Detector.run(config)
 
       line0_clones =
         Enum.filter(clones, fn c ->
@@ -484,7 +484,7 @@ defmodule ExDNA.Detection.DetectorTest do
       """)
 
       config = Config.new(paths: [dir], min_mass: 5, reporters: [])
-      clones = Detector.run(config)
+      {clones, _} = Detector.run(config)
 
       grouped_clones =
         Enum.filter(clones, fn c ->

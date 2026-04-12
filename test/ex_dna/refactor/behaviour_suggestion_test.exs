@@ -207,21 +207,21 @@ defmodule ExDNA.Refactor.BehaviourSuggestionTest do
       assert BehaviourSuggestion.suggest(clone) == nil
     end
 
-    test "works with defp as well as def", %{dir: dir} do
-      ast = defp_ast(:transform, 1)
+    test "works with def across different files", %{dir: dir} do
+      ast = def_ast(:transform, 1)
 
       {file_a, ast_a} =
         write_and_parse(
           dir,
           "parser_a.ex",
-          "defmodule ParserA do\n  defp transform(x), do: x\nend\n"
+          "defmodule ParserA do\n  def transform(x), do: x\nend\n"
         )
 
       {file_b, ast_b} =
         write_and_parse(
           dir,
           "parser_b.ex",
-          "defmodule ParserB do\n  defp transform(x), do: x\nend\n"
+          "defmodule ParserB do\n  def transform(x), do: x\nend\n"
         )
 
       clone = %Clone{

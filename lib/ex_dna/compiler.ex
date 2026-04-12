@@ -26,7 +26,8 @@ defmodule ExDNA.Compiler do
   def run(_argv) do
     config = Config.new([])
     cache_path = Cache.default_path()
-    cached = Cache.read(cache_path)
+    cfg_hash = Cache.config_hash(config)
+    cached = Cache.read(cache_path, cfg_hash)
 
     files = Pipeline.collect_files(config)
     stale = Cache.stale_files(files, cached)
@@ -49,7 +50,7 @@ defmodule ExDNA.Compiler do
       |> Map.new(fn {:ok, result} -> result end)
 
     merged = Cache.merge(cached, fresh_entries, files)
-    Cache.write(merged, cache_path)
+    Cache.write(merged, cache_path, cfg_hash)
 
     file_ast_pairs =
       Enum.flat_map(merged, fn {file, entry} ->
@@ -59,7 +60,7 @@ defmodule ExDNA.Compiler do
         end
       end)
 
-    clones = Detector.run(config, file_ast_pairs)
+    {clones, _files_analyzed} = Detector.run(config, file_ast_pairs)
 
     diagnostics =
       Enum.flat_map(clones, fn clone ->

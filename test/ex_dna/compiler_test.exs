@@ -45,7 +45,7 @@ defmodule ExDNA.CompilerTest do
           end
         end)
 
-      clones = Detector.run(config, file_ast_pairs)
+      {clones, _} = Detector.run(config, file_ast_pairs)
       assert clones != []
     end
 

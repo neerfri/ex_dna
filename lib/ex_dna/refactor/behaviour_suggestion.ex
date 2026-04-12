@@ -57,7 +57,7 @@ defmodule ExDNA.Refactor.BehaviourSuggestion do
 
   defp all_defs?(frags) do
     Enum.all?(frags, fn frag ->
-      match?({kind, _, _} when kind in [:def, :defp], frag.ast)
+      match?({:def, _, _}, frag.ast)
     end)
   end
 

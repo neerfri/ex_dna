@@ -45,20 +45,18 @@ defmodule Mix.Tasks.ExDna do
       )
 
     config_opts = build_config(opts, paths)
-
-    start = System.monotonic_time(:millisecond)
     report = ExDNA.analyze(config_opts)
-    elapsed = System.monotonic_time(:millisecond) - start
+    detection_ms = report.stats.detection_time_ms
 
     unless Keyword.get(opts, :format) == "json" do
-      IO.puts(["  Detection time:     #{elapsed}ms\n"])
+      IO.puts("  Detection time:     #{detection_ms}ms\n")
     end
 
     max_clones = Keyword.get(opts, :max_clones)
     total = report.stats.total_clones
 
     if max_clones && Keyword.get(opts, :format) != "json" do
-      IO.puts(["  Clone budget:       \#{total}/\#{max_clones}\n"])
+      IO.puts("  Clone budget:       #{total}/#{max_clones}\n")
     end
 
     should_fail =

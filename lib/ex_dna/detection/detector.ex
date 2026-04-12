@@ -16,7 +16,7 @@ defmodule ExDNA.Detection.Detector do
   @doc """
   Run detection for the given config. Returns a list of `Clone` structs.
   """
-  @spec run(Config.t()) :: [Clone.t()]
+  @spec run(Config.t()) :: {[Clone.t()], non_neg_integer()}
   def run(%Config{} = config) do
     files = Pipeline.collect_files(config)
 
@@ -29,7 +29,7 @@ defmodule ExDNA.Detection.Detector do
       )
       |> Enum.flat_map(fn {:ok, result} -> result end)
 
-    run(config, pairs)
+    {run_detection(config, pairs), length(pairs)}
   end
 
   @doc """
@@ -38,8 +38,12 @@ defmodule ExDNA.Detection.Detector do
   Accepts a list of `{filename, ast}` tuples (e.g. from Credo's ETS cache)
   and skips file I/O and parsing entirely.
   """
-  @spec run(Config.t(), [{String.t(), Macro.t()}]) :: [Clone.t()]
+  @spec run(Config.t(), [{String.t(), Macro.t()}]) :: {[Clone.t()], non_neg_integer()}
   def run(%Config{} = config, file_ast_pairs) when is_list(file_ast_pairs) do
+    {run_detection(config, file_ast_pairs), length(file_ast_pairs)}
+  end
+
+  defp run_detection(config, file_ast_pairs) do
     fragments = fingerprint_pairs(file_ast_pairs, config)
 
     type_i_clones = Pipeline.find_clones(fragments, :type_i)

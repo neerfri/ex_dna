@@ -67,17 +67,23 @@ defmodule ExDNA.AST.Normalizer do
     normalized
   end
 
+  @special_vars ~w(__MODULE__ __ENV__ __DIR__ __CALLER__ __STACKTRACE__ _)a
+
   defp rename_var({name, meta, context}, env) when is_atom(name) and is_atom(context) do
-    key = {name, context}
+    if name in @special_vars do
+      {{name, meta, context}, env}
+    else
+      key = {name, context}
 
-    case env do
-      %{^key => placeholder} ->
-        {{placeholder, meta, context}, env}
+      case env do
+        %{^key => placeholder} ->
+          {{placeholder, meta, context}, env}
 
-      _ ->
-        index = map_size(env)
-        placeholder = :"$#{index}"
-        {{placeholder, meta, context}, Map.put(env, key, placeholder)}
+        _ ->
+          index = map_size(env)
+          placeholder = :"$#{index}"
+          {{placeholder, meta, context}, Map.put(env, key, placeholder)}
+      end
     end
   end
 

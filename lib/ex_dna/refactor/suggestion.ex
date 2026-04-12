@@ -88,9 +88,10 @@ defmodule ExDNA.Refactor.Suggestion do
       frags
       |> Enum.with_index()
       |> Enum.map(fn {frag, idx} ->
+        hole_values = extract_hole_values(frag, ast_a, holes, idx)
+
         args =
-          Enum.map_join(holes, ", ", fn hole ->
-            value = Enum.at(hole.values, min(idx, 1))
+          Enum.map_join(hole_values, ", ", fn value ->
             value |> humanize_ast() |> safe_to_string()
           end)
 
@@ -262,6 +263,22 @@ defmodule ExDNA.Refactor.Suggestion do
       end)
 
     Enum.uniq(calls)
+  end
+
+  defp extract_hole_values(frag, ref_ast, holes, idx) do
+    case idx do
+      0 ->
+        Enum.map(holes, fn hole -> Enum.at(hole.values, 0) end)
+
+      1 ->
+        Enum.map(holes, fn hole -> Enum.at(hole.values, 1) end)
+
+      _ ->
+        frag_ast = Normalizer.strip_metadata(frag.ast)
+        ref_stripped = Normalizer.strip_metadata(ref_ast)
+        {_pattern, frag_holes} = AntiUnifier.anti_unify(ref_stripped, frag_ast)
+        Enum.map(frag_holes, fn hole -> Enum.at(hole.values, 1) end)
+    end
   end
 
   defp rename_holes(ast, holes) do

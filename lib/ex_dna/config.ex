@@ -58,11 +58,30 @@ defmodule ExDNA.Config do
       |> Map.merge(file_opts)
       |> Map.merge(Map.new(opts))
 
-    struct!(__MODULE__, attrs)
+    config = struct!(__MODULE__, attrs)
+    validate!(config)
+    config
   end
 
   @spec default(atom()) :: term()
   def default(key), do: Map.fetch!(@defaults, key)
+
+  defp validate!(config) do
+    unless is_integer(config.min_mass) and config.min_mass > 0 do
+      raise ArgumentError, "min_mass must be a positive integer, got: #{inspect(config.min_mass)}"
+    end
+
+    unless is_float(config.min_similarity) and config.min_similarity >= 0.0 and
+             config.min_similarity <= 1.0 do
+      raise ArgumentError,
+            "min_similarity must be a float between 0.0 and 1.0, got: #{inspect(config.min_similarity)}"
+    end
+
+    unless config.literal_mode in [:keep, :abstract] do
+      raise ArgumentError,
+            "literal_mode must be :keep or :abstract, got: #{inspect(config.literal_mode)}"
+    end
+  end
 
   defp load_config_file do
     path = Path.join(File.cwd!(), ".ex_dna.exs")

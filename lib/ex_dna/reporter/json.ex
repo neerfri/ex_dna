@@ -33,6 +33,7 @@ defmodule ExDNA.Reporter.JSON do
     base
     |> maybe_put(:similarity, clone.similarity)
     |> maybe_put(:suggestion, serialize_suggestion(clone.suggestion))
+    |> maybe_put(:behaviour_suggestion, serialize_behaviour(clone.behaviour_suggestion))
   end
 
   defp serialize_suggestion(nil), do: nil
@@ -48,6 +49,12 @@ defmodule ExDNA.Reporter.JSON do
           %{file: site.file, line: site.line, call: site.call}
         end)
     }
+  end
+
+  defp serialize_behaviour(nil), do: nil
+
+  defp serialize_behaviour(%{callback_name: name, callback_arity: arity, modules: modules}) do
+    %{callback_name: name, callback_arity: arity, modules: modules}
   end
 
   defp maybe_put(map, _key, nil), do: map

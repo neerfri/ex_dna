@@ -40,7 +40,7 @@ defmodule ExDNA do
   @doc """
   Analyze files for code duplication.
 
-  Accepts a path string, a list of paths, or a keyword list of options.
+  Accepts a path string, a list of path strings, or a keyword list of options.
 
   ## Options
 
@@ -53,6 +53,7 @@ defmodule ExDNA do
   ## Examples
 
       ExDNA.analyze("lib/")
+      ExDNA.analyze(["lib/", "test/"])
       ExDNA.analyze(paths: ["lib/", "test/"], min_mass: 20)
   """
   @spec analyze(path_or_paths() | keyword()) :: Report.t()
@@ -60,11 +61,22 @@ defmodule ExDNA do
 
   def analyze(path) when is_binary(path), do: analyze(paths: [path])
 
-  def analyze(opts) when is_list(opts) do
+  def analyze(paths) when is_list(paths) do
+    if Keyword.keyword?(paths) do
+      do_analyze(paths)
+    else
+      do_analyze(paths: paths)
+    end
+  end
+
+  defp do_analyze(opts) do
     config = Config.new(opts)
 
-    {elapsed_us, clones} = :timer.tc(fn -> Detection.Detector.run(config) end)
+    {elapsed_us, {clones, files_analyzed}} = :timer.tc(fn -> Detection.Detector.run(config) end)
 
-    Report.new(clones, config, div(elapsed_us, 1000))
+    Report.new(clones, config,
+      detection_time_ms: div(elapsed_us, 1000),
+      files_analyzed: files_analyzed
+    )
   end
 end

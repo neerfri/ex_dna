@@ -16,7 +16,7 @@ defmodule ExDNA.ReportTest do
 
   test "detection_time_ms is populated when provided", %{dir: dir} do
     config = Config.new(paths: [dir], reporters: [])
-    report = Report.new([], config, 42)
+    report = Report.new([], config, detection_time_ms: 42)
 
     assert report.stats.detection_time_ms == 42
   end

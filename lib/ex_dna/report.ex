@@ -4,7 +4,7 @@ defmodule ExDNA.Report do
   """
 
   alias ExDNA.Config
-  alias ExDNA.Detection.{Clone, Pipeline}
+  alias ExDNA.Detection.Clone
 
   @type stats :: %{
           files_analyzed: non_neg_integer(),
@@ -24,10 +24,10 @@ defmodule ExDNA.Report do
 
   defstruct [:config, clones: [], stats: %{}]
 
-  @spec new([Clone.t()], Config.t()) :: t()
-  @spec new([Clone.t()], Config.t(), non_neg_integer()) :: t()
-  def new(clones, config, detection_time_ms \\ 0) do
-    files_analyzed = length(Pipeline.collect_files(config))
+  @spec new([Clone.t()], Config.t(), keyword()) :: t()
+  def new(clones, config, opts \\ []) do
+    detection_time_ms = Keyword.get(opts, :detection_time_ms, 0)
+    files_analyzed = Keyword.get(opts, :files_analyzed, 0)
     stats = compute_stats(clones, files_analyzed, detection_time_ms)
 
     report = %__MODULE__{

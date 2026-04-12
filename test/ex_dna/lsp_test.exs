@@ -58,7 +58,7 @@ defmodule ExDNA.LSPTest do
             "change" => 1
           }
         },
-        "serverInfo" => %{"name" => "ExDNA", "version" => "1.0.0"}
+        "serverInfo" => %{"name" => "ExDNA", "version" => _version}
       },
       5_000
     )

@@ -71,11 +71,7 @@ defmodule ExDNA.AST.Fingerprint do
     if excluded_macro?(form, excluded) do
       {node, acc, MapSet.new()}
     else
-      {acc, child_subs} =
-        Enum.reduce(args, {acc, MapSet.new()}, fn child, {a, subs} ->
-          {_, a, child_s} = walk(child, file, min_mass, norm_opts, excluded, a)
-          {a, MapSet.union(subs, child_s)}
-        end)
+      {acc, child_subs} = walk_children(args, file, min_mass, norm_opts, excluded, acc)
 
       mass = mass(node)
 
@@ -118,17 +114,19 @@ defmodule ExDNA.AST.Fingerprint do
   end
 
   defp walk(list, file, min_mass, norm_opts, excluded, acc) when is_list(list) do
-    {acc, subs} =
-      Enum.reduce(list, {acc, MapSet.new()}, fn item, {a, s} ->
-        {_, a, child_s} = walk(item, file, min_mass, norm_opts, excluded, a)
-        {a, MapSet.union(s, child_s)}
-      end)
-
+    {acc, subs} = walk_children(list, file, min_mass, norm_opts, excluded, acc)
     {list, acc, subs}
   end
 
   defp walk(leaf, _file, _min_mass, _norm_opts, _excluded, acc),
     do: {leaf, acc, MapSet.new()}
+
+  defp walk_children(children, file, min_mass, norm_opts, excluded, acc) do
+    Enum.reduce(children, {acc, MapSet.new()}, fn child, {a, subs} ->
+      {_, a, child_s} = walk(child, file, min_mass, norm_opts, excluded, a)
+      {a, MapSet.union(subs, child_s)}
+    end)
+  end
 
   # --- Sibling windows ---
 
