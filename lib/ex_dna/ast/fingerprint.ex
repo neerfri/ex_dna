@@ -5,6 +5,10 @@ defmodule ExDNA.AST.Fingerprint do
   Every subtree whose *mass* (node count) meets the threshold is hashed.
   Two normalized ASTs with the same hash are structurally identical clones.
   Each fragment also carries a characteristic vector for fast fuzzy comparison.
+
+  Additionally, sliding windows over sibling sequences (consecutive statements
+  in a block) are fingerprinted to catch clones that span multiple statements
+  but don't align to a single subtree boundary.
   """
 
   alias ExDNA.AST.{CharacteristicVector, Normalizer}
@@ -18,6 +22,8 @@ defmodule ExDNA.AST.Fingerprint do
           line: pos_integer(),
           vector: %{atom() => pos_integer()}
         }
+
+  @max_window_size 6
 
   @doc """
   Walk an AST and return all subtree fragments that meet `min_mass`.
@@ -39,6 +45,8 @@ defmodule ExDNA.AST.Fingerprint do
       Enum.reduce(args, acc, fn child, a ->
         elem(walk(child, file, min_mass, norm_opts, excluded, a), 1)
       end)
+
+    acc = sibling_windows(args, file, min_mass, norm_opts, acc)
 
     {node, acc}
   end
@@ -93,6 +101,48 @@ defmodule ExDNA.AST.Fingerprint do
   end
 
   defp walk(leaf, _file, _min_mass, _norm_opts, _excluded, acc), do: {leaf, acc}
+
+  defp sibling_windows(children, _file, _min_mass, _norm_opts, acc) when length(children) < 2,
+    do: acc
+
+  defp sibling_windows(children, file, min_mass, norm_opts, acc) do
+    len = length(children)
+    max_win = min(@max_window_size, len)
+
+    Enum.reduce(2..max_win//1, acc, fn window_size, acc_outer ->
+      children
+      |> Enum.chunk_every(window_size, 1, :discard)
+      |> Enum.reduce(acc_outer, fn window, acc_inner ->
+        maybe_window_fragment(window, file, min_mass, norm_opts, acc_inner)
+      end)
+    end)
+  end
+
+  defp maybe_window_fragment(window, file, min_mass, norm_opts, acc) do
+    combined_mass = Enum.sum(Enum.map(window, &mass/1))
+
+    if combined_mass < min_mass do
+      acc
+    else
+      synthetic = {:__block__, [], window}
+      normalized = Normalizer.normalize(synthetic, norm_opts)
+      hash = compute_hash(normalized)
+
+      frag = %{
+        hash: hash,
+        mass: combined_mass,
+        ast: synthetic,
+        file: file,
+        line: first_line(window),
+        vector: CharacteristicVector.compute(synthetic)
+      }
+
+      [frag | acc]
+    end
+  end
+
+  defp first_line([{_form, meta, _args} | _]), do: Keyword.get(meta, :line, 0)
+  defp first_line(_), do: 0
 
   defp excluded_macro?(form, excluded) when is_atom(form), do: MapSet.member?(excluded, form)
   defp excluded_macro?(_, _), do: false

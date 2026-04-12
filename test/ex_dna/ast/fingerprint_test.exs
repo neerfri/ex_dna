@@ -94,7 +94,7 @@ defmodule ExDNA.AST.FingerprintTest do
       assert has_process
     end
 
-    test "does not fingerprint bare __block__ nodes" do
+    test "sibling window fragments are synthetic __block__ nodes" do
       ast =
         quote do
           defmodule Foo do
@@ -113,7 +113,10 @@ defmodule ExDNA.AST.FingerprintTest do
       block_frags =
         Enum.filter(frags, fn f -> match?({:__block__, _, _}, f.ast) end)
 
-      assert block_frags == []
+      for frag <- block_frags do
+        {:__block__, [], children} = frag.ast
+        assert length(children) >= 2
+      end
     end
   end
 
@@ -133,6 +136,56 @@ defmodule ExDNA.AST.FingerprintTest do
       # foo(bar(1), 2) → 1 (foo) + 1 (bar) + 1 (1) + 1 (2) = 4
       ast = quote do: foo(bar(1), 2)
       assert Fingerprint.mass(ast) == 4
+    end
+  end
+
+  describe "sibling window fingerprinting" do
+    test "detects identical consecutive statement sequences across files" do
+      code_a = """
+      defmodule A do
+        def extra(x), do: x
+
+        def setup(conn) do
+          conn |> assign(:user, nil)
+        end
+
+        def process(data) do
+          data |> Enum.map(& &1.name) |> Enum.sort()
+        end
+      end
+      """
+
+      code_b = """
+      defmodule B do
+        def setup(conn) do
+          conn |> assign(:user, nil)
+        end
+
+        def process(data) do
+          data |> Enum.map(& &1.name) |> Enum.sort()
+        end
+
+        def other(x), do: x * 2
+      end
+      """
+
+      ast_a = Code.string_to_quoted!(code_a)
+      ast_b = Code.string_to_quoted!(code_b)
+
+      frags_a = Fingerprint.fragments(ast_a, "a.ex", 5)
+      frags_b = Fingerprint.fragments(ast_b, "b.ex", 5)
+
+      window_frags_a =
+        Enum.filter(frags_a, fn f -> match?({:__block__, _, _}, f.ast) end)
+
+      window_frags_b =
+        Enum.filter(frags_b, fn f -> match?({:__block__, _, _}, f.ast) end)
+
+      hashes_a = MapSet.new(window_frags_a, & &1.hash)
+      hashes_b = MapSet.new(window_frags_b, & &1.hash)
+
+      shared = MapSet.intersection(hashes_a, hashes_b)
+      assert MapSet.size(shared) > 0
     end
   end
 end
