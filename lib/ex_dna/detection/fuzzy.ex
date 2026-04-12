@@ -36,12 +36,18 @@ defmodule ExDNA.Detection.Fuzzy do
 
     by_idx = Map.new(candidates, fn {frag, idx} -> {idx, frag} end)
 
-    candidates
-    |> build_candidate_pairs(by_idx)
+    pairs = build_candidate_pairs(candidates, by_idx)
+
+    needed_indices =
+      pairs
+      |> Enum.flat_map(fn {i, j} -> [i, j] end)
+      |> Enum.uniq()
+
+    norms = Map.new(needed_indices, fn idx -> {idx, Normalizer.normalize(by_idx[idx].ast)} end)
+
+    pairs
     |> Enum.flat_map(fn {i, j} ->
-      norm_a = Normalizer.normalize(by_idx[i].ast)
-      norm_b = Normalizer.normalize(by_idx[j].ast)
-      sim = EditDistance.similarity(norm_a, norm_b)
+      sim = EditDistance.similarity(norms[i], norms[j])
       if sim >= min_similarity, do: [{by_idx[i], by_idx[j], sim}], else: []
     end)
     |> deduplicate_pairs()
@@ -56,25 +62,24 @@ defmodule ExDNA.Detection.Fuzzy do
         end)
       end)
 
-    inverted
-    |> Enum.reduce(MapSet.new(), fn {_hash, indices}, pairs ->
-      pairs_from_posting(indices, pairs)
+    Enum.reduce(inverted, MapSet.new(), fn {_hash, indices}, pairs ->
+      pairs_from_posting(indices, pairs, by_idx)
     end)
-    |> Enum.filter(fn {i, j} ->
-      a = by_idx[i]
-      b = by_idx[j]
-      mass_compatible?(a, b) and not same_location?(a, b) and jaccard_compatible?(a, b)
-    end)
+    |> MapSet.to_list()
   end
 
-  defp pairs_from_posting(indices, pairs) when length(indices) > @max_posting_list do
-    # Sample the largest-mass fragments instead of discarding entirely
-    sampled = Enum.take(indices, @max_posting_list)
-    pairs_from_posting(sampled, pairs)
+  defp pairs_from_posting(indices, pairs, by_idx) when length(indices) > @max_posting_list do
+    pairs_from_posting(Enum.take(indices, @max_posting_list), pairs, by_idx)
   end
 
-  defp pairs_from_posting(indices, pairs) do
-    for i <- indices, j <- indices, i < j, reduce: pairs do
+  defp pairs_from_posting(indices, pairs, by_idx) do
+    for i <- indices,
+        j <- indices,
+        i < j,
+        mass_compatible?(by_idx[i], by_idx[j]),
+        not same_location?(by_idx[i], by_idx[j]),
+        jaccard_compatible?(by_idx[i], by_idx[j]),
+        reduce: pairs do
       acc -> MapSet.put(acc, {i, j})
     end
   end

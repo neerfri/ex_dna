@@ -44,23 +44,25 @@ defmodule ExDNA.AST.Fingerprint do
     frags
   end
 
-  # __block__ — walk children, optionally generate sibling windows
+  # __block__ — walk children, track per-child sub-hashes for window construction
   defp walk({:__block__, _meta, args} = node, file, min_mass, norm_opts, excluded, acc)
        when is_list(args) do
-    {acc, child_subs} =
-      Enum.reduce(args, {acc, MapSet.new()}, fn child, {a, subs} ->
+    {acc, per_child_subs, all_subs} =
+      Enum.reduce(args, {acc, [], MapSet.new()}, fn child, {a, per_child, all} ->
         {_, a, child_s} = walk(child, file, min_mass, norm_opts, excluded, a)
-        {a, MapSet.union(subs, child_s)}
+        {a, [child_s | per_child], MapSet.union(all, child_s)}
       end)
+
+    per_child_subs = Enum.reverse(per_child_subs)
 
     acc =
       if module_body?(args) do
-        sibling_windows(args, file, min_mass, norm_opts, acc)
+        sibling_windows(args, per_child_subs, file, min_mass, norm_opts, acc)
       else
         acc
       end
 
-    {node, acc, child_subs}
+    {node, acc, all_subs}
   end
 
   # Regular call nodes — walk children, fingerprint if large enough
@@ -139,23 +141,27 @@ defmodule ExDNA.AST.Fingerprint do
     end)
   end
 
-  defp sibling_windows(children, _file, _min_mass, _norm_opts, acc) when length(children) < 2,
-    do: acc
+  defp sibling_windows(children, _per_child_subs, _file, _min_mass, _norm_opts, acc)
+       when length(children) < 2,
+       do: acc
 
-  defp sibling_windows(children, file, min_mass, norm_opts, acc) do
+  defp sibling_windows(children, per_child_subs, file, min_mass, norm_opts, acc) do
     len = length(children)
     max_win = min(@max_window_size, len)
+    children_with_subs = Enum.zip(children, per_child_subs)
 
     Enum.reduce(2..max_win//1, acc, fn window_size, acc_outer ->
-      children
+      children_with_subs
       |> Enum.chunk_every(window_size, 1, :discard)
-      |> Enum.reduce(acc_outer, fn window, acc_inner ->
-        maybe_window_fragment(window, file, min_mass, norm_opts, acc_inner)
+      |> Enum.reduce(acc_outer, fn window_with_subs, acc_inner ->
+        {window, subs_list} = Enum.unzip(window_with_subs)
+        window_subs = Enum.reduce(subs_list, MapSet.new(), &MapSet.union/2)
+        maybe_window_fragment(window, window_subs, file, min_mass, norm_opts, acc_inner)
       end)
     end)
   end
 
-  defp maybe_window_fragment(window, file, min_mass, norm_opts, acc) do
+  defp maybe_window_fragment(window, window_subs, file, min_mass, norm_opts, acc) do
     combined_mass = Enum.sum(Enum.map(window, &mass/1))
 
     if combined_mass < min_mass do
@@ -171,42 +177,12 @@ defmodule ExDNA.AST.Fingerprint do
         ast: synthetic,
         file: file,
         line: first_line(window),
-        sub_hashes: collect_sub_hashes(synthetic)
+        sub_hashes: window_subs
       }
 
       [frag | acc]
     end
   end
-
-  # --- Sub-hash collection (standalone, for window fragments) ---
-
-  defp collect_sub_hashes(ast) do
-    {_, subs} = do_collect_subs(ast, MapSet.new())
-    subs
-  end
-
-  defp do_collect_subs({form, _meta, args}, subs) when is_atom(form) and is_list(args) do
-    subs = Enum.reduce(args, subs, fn child, s -> elem(do_collect_subs(child, s), 1) end)
-    m = mass({form, [], args})
-
-    if m >= @sub_hash_min_mass do
-      child_forms = Enum.map(args, &child_form/1)
-      {nil, MapSet.put(subs, :erlang.phash2({form, child_forms, m}))}
-    else
-      {nil, subs}
-    end
-  end
-
-  defp do_collect_subs({left, right}, subs) do
-    {_, subs} = do_collect_subs(left, subs)
-    do_collect_subs(right, subs)
-  end
-
-  defp do_collect_subs(list, subs) when is_list(list) do
-    {nil, Enum.reduce(list, subs, fn item, s -> elem(do_collect_subs(item, s), 1) end)}
-  end
-
-  defp do_collect_subs(_leaf, subs), do: {nil, subs}
 
   # --- Helpers ---
 
