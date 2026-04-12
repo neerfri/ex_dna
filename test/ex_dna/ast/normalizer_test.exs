@@ -121,3 +121,21 @@ defmodule ExDNA.AST.NormalizerTest do
     end
   end
 end
+
+defmodule ExDNA.AST.Normalizer.MapUpdateTest do
+  use ExUnit.Case, async: true
+
+  alias ExDNA.AST.Normalizer
+
+  test "map update syntax does not crash" do
+    ast = Code.string_to_quoted!("%{acc | total: acc.total + 1, count: acc.count + 1}")
+    norm = Normalizer.normalize(ast, literal_mode: :abstract)
+    assert norm != nil
+  end
+
+  test "struct update syntax does not crash" do
+    ast = Code.string_to_quoted!("%User{user | name: \"new\"}")
+    norm = Normalizer.normalize(ast, literal_mode: :abstract)
+    assert norm != nil
+  end
+end

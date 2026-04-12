@@ -89,13 +89,14 @@ defmodule ExDNA.AST.Normalizer do
   defp maybe_abstract_literals(ast, :keep), do: ast
   defp maybe_abstract_literals(ast, :abstract), do: abstract_walk(ast)
 
-  defp abstract_walk({:%, meta, [struct_name, {:%{}, map_meta, fields}]}) do
-    sorted = sort_fields(fields)
-    {:%, meta, [abstract_walk(struct_name), {:%{}, map_meta, sorted}]}
+  defp abstract_walk({:%, meta, [struct_name, {:%{}, map_meta, fields}]})
+       when is_list(fields) do
+    walked = walk_map_fields(fields)
+    {:%, meta, [abstract_walk(struct_name), {:%{}, map_meta, walked}]}
   end
 
   defp abstract_walk({:%{}, meta, fields}) when is_list(fields) do
-    {:%{}, meta, sort_fields(fields)}
+    {:%{}, meta, walk_map_fields(fields)}
   end
 
   defp abstract_walk({form, meta, args}) when is_list(args) do
@@ -119,9 +120,20 @@ defmodule ExDNA.AST.Normalizer do
   defp abstract_walk(str) when is_binary(str), do: :__string__
   defp abstract_walk(atom) when is_atom(atom), do: atom
 
-  defp sort_fields(fields) do
-    fields
-    |> Enum.map(fn {k, v} -> {k, abstract_walk(v)} end)
-    |> Enum.sort_by(fn {k, _v} -> k end)
+  defp walk_map_fields(fields) do
+    if all_kv_pairs?(fields) do
+      fields
+      |> Enum.map(fn {k, v} -> {k, abstract_walk(v)} end)
+      |> Enum.sort_by(fn {k, _v} -> k end)
+    else
+      Enum.map(fields, &abstract_walk/1)
+    end
+  end
+
+  defp all_kv_pairs?(fields) do
+    Enum.all?(fields, fn
+      {_k, _v} -> true
+      _ -> false
+    end)
   end
 end
