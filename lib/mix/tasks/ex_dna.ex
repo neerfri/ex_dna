@@ -19,8 +19,10 @@ defmodule Mix.Tasks.ExDna do
       `@` is excluded by default. Common: `schema`, `pipe_through`, `plug`
     * `--ignore` — glob pattern to exclude (repeatable)
     * `--format` — output format: `console` (default), `json`, or `html`
+    * `--max-clones` — maximum allowed clones. Exits with code 1 only when
+      exceeded. Useful for gradual adoption in brownfield projects.
 
-  Exits with code 1 if clones are found.
+  Exits with code 1 if clones are found (or exceed `--max-clones`).
   """
 
   use Mix.Task
@@ -36,7 +38,8 @@ defmodule Mix.Tasks.ExDna do
           normalize_pipes: :boolean,
           exclude_macro: :keep,
           ignore: :keep,
-          format: :string
+          format: :string,
+          max_clones: :integer
         ],
         aliases: [m: :min_mass, s: :min_similarity, i: :ignore, f: :format]
       )
@@ -51,7 +54,17 @@ defmodule Mix.Tasks.ExDna do
       IO.puts(["  Detection time:     #{elapsed}ms\n"])
     end
 
-    if report.stats.total_clones > 0 do
+    max_clones = Keyword.get(opts, :max_clones)
+    total = report.stats.total_clones
+
+    should_fail =
+      if max_clones do
+        total > max_clones
+      else
+        total > 0
+      end
+
+    if should_fail do
       System.at_exit(fn _ -> exit({:shutdown, 1}) end)
     end
   end
