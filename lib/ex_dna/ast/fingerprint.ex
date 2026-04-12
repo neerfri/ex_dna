@@ -5,12 +5,12 @@ defmodule ExDNA.AST.Fingerprint do
   Every subtree whose *mass* (node count) meets the threshold is hashed.
   Two normalized ASTs with the same hash are structurally identical clones.
 
-  Each fragment also carries a set of lightweight sub-hashes from its
-  children (computed during the same walk) for efficient Jaccard-based
-  fuzzy candidate pruning.
+  Each fragment also carries a set of lightweight sub-hashes from its child
+  subtrees, computed during the same walk, for efficient Jaccard-based
+  fuzzy candidate pruning in `ExDNA.Detection.Fuzzy`.
 
-  Additionally, sliding windows over sibling sequences in module bodies
-  are fingerprinted to catch clones that span multiple adjacent statements.
+  Sliding windows over sibling sequences in module bodies are fingerprinted
+  to catch clones that span multiple adjacent statements.
   """
 
   alias ExDNA.AST.Normalizer
@@ -25,7 +25,11 @@ defmodule ExDNA.AST.Fingerprint do
           sub_hashes: MapSet.t(integer())
         }
 
+  # Max consecutive siblings to combine into a synthetic fragment.
+  # 4 balances clone coverage vs fragment count (higher = combinatorial blowup).
   @max_window_size 4
+  # Minimum AST mass for a sub-node to contribute a sub-hash.
+  # Nodes below this (single calls, variables) are too common to discriminate.
   @sub_hash_min_mass 5
   @module_level_forms [:def, :defp, :defmacro, :defmacrop]
 
@@ -36,24 +40,16 @@ defmodule ExDNA.AST.Fingerprint do
   def fragments(ast, file, min_mass, opts \\ []) do
     norm_opts = Keyword.take(opts, [:literal_mode, :normalize_pipes])
     excluded = Keyword.get(opts, :excluded_macros, []) |> MapSet.new()
-    {_ast, frags, _sub_hashes} = walk(ast, file, min_mass, norm_opts, excluded, [], MapSet.new())
+    {_ast, frags, _sub_hashes} = walk(ast, file, min_mass, norm_opts, excluded, [])
     frags
   end
 
-  # __block__ — walk children, optionally generate sibling windows, don't fingerprint the block itself
-  defp walk(
-         {:__block__, _meta, args} = node,
-         file,
-         min_mass,
-         norm_opts,
-         excluded,
-         acc,
-         _parent_subs
-       )
+  # __block__ — walk children, optionally generate sibling windows
+  defp walk({:__block__, _meta, args} = node, file, min_mass, norm_opts, excluded, acc)
        when is_list(args) do
     {acc, child_subs} =
       Enum.reduce(args, {acc, MapSet.new()}, fn child, {a, subs} ->
-        {_, a, child_s} = walk(child, file, min_mass, norm_opts, excluded, a, MapSet.new())
+        {_, a, child_s} = walk(child, file, min_mass, norm_opts, excluded, a)
         {a, MapSet.union(subs, child_s)}
       end)
 
@@ -68,23 +64,23 @@ defmodule ExDNA.AST.Fingerprint do
   end
 
   # Regular call nodes — walk children, fingerprint if large enough
-  defp walk({form, _meta, args} = node, file, min_mass, norm_opts, excluded, acc, _parent_subs)
+  defp walk({form, _meta, args} = node, file, min_mass, norm_opts, excluded, acc)
        when is_list(args) do
     if excluded_macro?(form, excluded) do
       {node, acc, MapSet.new()}
     else
       {acc, child_subs} =
         Enum.reduce(args, {acc, MapSet.new()}, fn child, {a, subs} ->
-          {_, a, child_s} = walk(child, file, min_mass, norm_opts, excluded, a, MapSet.new())
+          {_, a, child_s} = walk(child, file, min_mass, norm_opts, excluded, a)
           {a, MapSet.union(subs, child_s)}
         end)
 
       mass = mass(node)
 
-      # Collect lightweight sub-hash for this node (used by parent's Jaccard set)
       my_sub_hash =
         if mass >= @sub_hash_min_mass do
-          MapSet.new([:erlang.phash2({form, mass})])
+          child_forms = Enum.map(args, &child_form/1)
+          MapSet.new([:erlang.phash2({form, child_forms, mass})])
         else
           MapSet.new()
         end
@@ -113,24 +109,26 @@ defmodule ExDNA.AST.Fingerprint do
     end
   end
 
-  defp walk({left, right}, file, min_mass, norm_opts, excluded, acc, _parent_subs) do
-    {_, acc, subs_l} = walk(left, file, min_mass, norm_opts, excluded, acc, MapSet.new())
-    {_, acc, subs_r} = walk(right, file, min_mass, norm_opts, excluded, acc, MapSet.new())
+  defp walk({left, right}, file, min_mass, norm_opts, excluded, acc) do
+    {_, acc, subs_l} = walk(left, file, min_mass, norm_opts, excluded, acc)
+    {_, acc, subs_r} = walk(right, file, min_mass, norm_opts, excluded, acc)
     {{left, right}, acc, MapSet.union(subs_l, subs_r)}
   end
 
-  defp walk(list, file, min_mass, norm_opts, excluded, acc, _parent_subs) when is_list(list) do
+  defp walk(list, file, min_mass, norm_opts, excluded, acc) when is_list(list) do
     {acc, subs} =
       Enum.reduce(list, {acc, MapSet.new()}, fn item, {a, s} ->
-        {_, a, child_s} = walk(item, file, min_mass, norm_opts, excluded, a, MapSet.new())
+        {_, a, child_s} = walk(item, file, min_mass, norm_opts, excluded, a)
         {a, MapSet.union(s, child_s)}
       end)
 
     {list, acc, subs}
   end
 
-  defp walk(leaf, _file, _min_mass, _norm_opts, _excluded, acc, _parent_subs),
+  defp walk(leaf, _file, _min_mass, _norm_opts, _excluded, acc),
     do: {leaf, acc, MapSet.new()}
+
+  # --- Sibling windows ---
 
   defp module_body?(children) when length(children) > 30, do: false
 
@@ -173,12 +171,48 @@ defmodule ExDNA.AST.Fingerprint do
         ast: synthetic,
         file: file,
         line: first_line(window),
-        sub_hashes: MapSet.new()
+        sub_hashes: collect_sub_hashes(synthetic)
       }
 
       [frag | acc]
     end
   end
+
+  # --- Sub-hash collection (standalone, for window fragments) ---
+
+  defp collect_sub_hashes(ast) do
+    {_, subs} = do_collect_subs(ast, MapSet.new())
+    subs
+  end
+
+  defp do_collect_subs({form, _meta, args}, subs) when is_atom(form) and is_list(args) do
+    subs = Enum.reduce(args, subs, fn child, s -> elem(do_collect_subs(child, s), 1) end)
+    m = mass({form, [], args})
+
+    if m >= @sub_hash_min_mass do
+      child_forms = Enum.map(args, &child_form/1)
+      {nil, MapSet.put(subs, :erlang.phash2({form, child_forms, m}))}
+    else
+      {nil, subs}
+    end
+  end
+
+  defp do_collect_subs({left, right}, subs) do
+    {_, subs} = do_collect_subs(left, subs)
+    do_collect_subs(right, subs)
+  end
+
+  defp do_collect_subs(list, subs) when is_list(list) do
+    {nil, Enum.reduce(list, subs, fn item, s -> elem(do_collect_subs(item, s), 1) end)}
+  end
+
+  defp do_collect_subs(_leaf, subs), do: {nil, subs}
+
+  # --- Helpers ---
+
+  defp child_form({form, _, _}) when is_atom(form), do: form
+  defp child_form({form, _, _}) when is_tuple(form), do: :remote_call
+  defp child_form(_), do: :leaf
 
   defp first_line([{_form, meta, _args} | _]), do: Keyword.get(meta, :line, 0)
   defp first_line(_), do: 0

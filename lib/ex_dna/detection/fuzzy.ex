@@ -12,8 +12,15 @@ defmodule ExDNA.Detection.Fuzzy do
   alias ExDNA.AST.{EditDistance, Normalizer}
   alias ExDNA.Detection.Clone
 
+  # Only compare fragments within ±30% mass of each other
   @mass_tolerance 0.3
+  # Minimum Jaccard overlap to proceed to expensive edit distance.
+  # 0.3 balances recall (lower catches more) vs precision (higher = fewer false positives).
+  # Empirically tuned on Phoenix, Ecto, Livebook, Ash, Plausible.
   @jaccard_threshold 0.3
+  # Skip sub-hashes shared by 100+ fragments — these are structural noise
+  # (e.g. common def/fn patterns) that would generate too many candidate pairs.
+  # Fragments exceeding this are sampled (largest mass first) rather than dropped.
   @max_posting_list 100
 
   @doc """
@@ -28,13 +35,13 @@ defmodule ExDNA.Detection.Fuzzy do
       |> Enum.with_index()
 
     by_idx = Map.new(candidates, fn {frag, idx} -> {idx, frag} end)
-    norms = Map.new(candidates, fn {frag, idx} -> {idx, Normalizer.normalize(frag.ast)} end)
 
     candidates
     |> build_candidate_pairs(by_idx)
-    |> Enum.filter(fn {i, j} -> jaccard_compatible?(by_idx[i], by_idx[j]) end)
     |> Enum.flat_map(fn {i, j} ->
-      sim = EditDistance.similarity(norms[i], norms[j])
+      norm_a = Normalizer.normalize(by_idx[i].ast)
+      norm_b = Normalizer.normalize(by_idx[j].ast)
+      sim = EditDistance.similarity(norm_a, norm_b)
       if sim >= min_similarity, do: [{by_idx[i], by_idx[j], sim}], else: []
     end)
     |> deduplicate_pairs()
@@ -56,11 +63,15 @@ defmodule ExDNA.Detection.Fuzzy do
     |> Enum.filter(fn {i, j} ->
       a = by_idx[i]
       b = by_idx[j]
-      mass_compatible?(a, b) and not same_location?(a, b)
+      mass_compatible?(a, b) and not same_location?(a, b) and jaccard_compatible?(a, b)
     end)
   end
 
-  defp pairs_from_posting(indices, pairs) when length(indices) > @max_posting_list, do: pairs
+  defp pairs_from_posting(indices, pairs) when length(indices) > @max_posting_list do
+    # Sample the largest-mass fragments instead of discarding entirely
+    sampled = Enum.take(indices, @max_posting_list)
+    pairs_from_posting(sampled, pairs)
+  end
 
   defp pairs_from_posting(indices, pairs) do
     for i <- indices, j <- indices, i < j, reduce: pairs do
