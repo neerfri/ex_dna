@@ -57,7 +57,7 @@ defmodule ExDNA.AST.Fingerprint do
 
     acc =
       if module_body?(args) do
-        sibling_windows(args, per_child_subs, file, min_mass, norm_opts, acc)
+        sibling_windows(args, per_child_subs, file, min_mass, norm_opts, excluded, acc)
       else
         acc
       end
@@ -139,14 +139,21 @@ defmodule ExDNA.AST.Fingerprint do
     end)
   end
 
-  defp sibling_windows(children, _per_child_subs, _file, _min_mass, _norm_opts, acc)
+  defp sibling_windows(children, _per_child_subs, _file, _min_mass, _norm_opts, _excluded, acc)
        when length(children) < 2,
        do: acc
 
-  defp sibling_windows(children, per_child_subs, file, min_mass, norm_opts, acc) do
-    len = length(children)
+  defp sibling_windows(children, per_child_subs, file, min_mass, norm_opts, excluded, acc) do
+    children_with_subs =
+      children
+      |> Enum.zip(per_child_subs)
+      |> Enum.reject(fn
+        {{form, _, _}, _} -> excluded_macro?(form, excluded)
+        _ -> false
+      end)
+
+    len = length(children_with_subs)
     max_win = min(@max_window_size, len)
-    children_with_subs = Enum.zip(children, per_child_subs)
 
     Enum.reduce(2..max_win//1, acc, fn window_size, acc_outer ->
       children_with_subs

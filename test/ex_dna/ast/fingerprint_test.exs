@@ -139,6 +139,49 @@ defmodule ExDNA.AST.FingerprintTest do
     end
   end
 
+  describe "excluded macros in sibling windows" do
+    test "use/import blocks are excluded from sibling windows" do
+      code_a = """
+      defmodule A do
+        use Phoenix.Component
+        import Phoenix.HTML, only: [raw: 1]
+        import SomeApp.ContentHelpers, only: [body_to_html: 1]
+        import SomeApp.CoreComponents, only: [icon: 1]
+
+        def render(assigns), do: assigns
+      end
+      """
+
+      code_b = """
+      defmodule B do
+        use Phoenix.Component
+        import Phoenix.HTML, only: [raw: 1]
+        import SomeApp.ContentHelpers, only: [body_to_html: 1]
+        import SomeApp.CoreComponents, only: [icon: 1]
+
+        def render(assigns), do: assigns
+      end
+      """
+
+      ast_a = Code.string_to_quoted!(code_a)
+      ast_b = Code.string_to_quoted!(code_b)
+
+      excluded = [:use, :import]
+
+      frags_a = Fingerprint.fragments(ast_a, "a.ex", 20, excluded_macros: excluded)
+      frags_b = Fingerprint.fragments(ast_b, "b.ex", 20, excluded_macros: excluded)
+
+      window_frags_a = Enum.filter(frags_a, &match?({:__block__, _, _}, &1.ast))
+      window_frags_b = Enum.filter(frags_b, &match?({:__block__, _, _}, &1.ast))
+
+      hashes_a = MapSet.new(window_frags_a, & &1.hash)
+      hashes_b = MapSet.new(window_frags_b, & &1.hash)
+
+      shared = MapSet.intersection(hashes_a, hashes_b)
+      assert MapSet.size(shared) == 0
+    end
+  end
+
   describe "sibling window fingerprinting" do
     test "detects identical consecutive statement sequences across files" do
       code_a = """
