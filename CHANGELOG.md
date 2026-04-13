@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.1
+
+### Fixed
+
+- **Credo plugin mode** — `ExDNA.Credo` now works as both a Credo plugin
+  (`plugins: [{ExDNA.Credo, []}]`) and a standalone check. When used as a
+  plugin, it automatically registers itself and disables the built-in
+  `DuplicatedCode`. (#4)
+- **Credo module not found** — Changed `credo` dependency from `only: [:dev, :test]`
+  to `optional: true`, ensuring proper compilation order in consumer projects.
+  Previously `ExDNA.Credo` could fail to compile when `credo` was compiled
+  after `ex_dna`. (#4)
+- **False positives on `use`/`import` blocks** — `excluded_macros` now applies
+  to sibling window fingerprinting. Previously, adjacent `use`/`import`
+  statements were combined into synthetic fragments and flagged as duplicates
+  even when those macros were excluded. (#5)
+
 ## 1.3.0
 
 ### New
