@@ -9,7 +9,20 @@ if Code.ensure_loaded?(Credo.Check) do
 
     ## Setup
 
-    Add to the `:enabled` list in `.credo.exs`:
+    Use as a Credo plugin (recommended) — automatically registers the check
+    and disables the built-in `DuplicatedCode`:
+
+        # .credo.exs
+        %{
+          configs: [
+            %{
+              name: "default",
+              plugins: [{ExDNA.Credo, []}]
+            }
+          ]
+        }
+
+    Or add directly to the `:enabled` checks list:
 
         {ExDNA.Credo, []}
 
@@ -70,6 +83,38 @@ if Code.ensure_loaded?(Credo.Check) do
             "Similarity threshold for near-miss clones (0.0–1.0). Values below 1.0 enable Type-III detection."
         ]
       ]
+
+    @default_config """
+    %{
+      configs: [
+        %{
+          name: "default",
+          checks: %{
+            enabled: [
+              {ExDNA.Credo, []}
+            ],
+            disabled: [
+              {Credo.Check.Design.DuplicatedCode, false}
+            ]
+          }
+        }
+      ]
+    }
+    """
+
+    import Credo.Plugin
+
+    @doc """
+    Initializes ExDNA as a Credo plugin.
+
+    Registers the duplication check and disables the built-in `DuplicatedCode`.
+    Plugin params are forwarded as check params:
+
+        plugins: [{ExDNA.Credo, [min_mass: 40, literal_mode: :abstract]}]
+    """
+    def init(exec) do
+      register_default_config(exec, @default_config)
+    end
 
     alias Credo.Execution.ExecutionIssues
     alias ExDNA.Config

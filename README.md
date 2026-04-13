@@ -160,7 +160,22 @@ ExDNA ships a Credo check that replaces the built-in `DuplicatedCode` with
 full Type-I/II/III detection and refactoring suggestions. It reuses Credo's
 already-parsed ASTs — no double parsing.
 
-Add to the `:enabled` list in `.credo.exs`:
+Use as a Credo plugin (recommended) — automatically registers the check and
+disables the built-in `DuplicatedCode`:
+
+```elixir
+# .credo.exs
+%{
+  configs: [
+    %{
+      name: "default",
+      plugins: [{ExDNA.Credo, []}]
+    }
+  ]
+}
+```
+
+Or add directly to the `:enabled` checks list:
 
 ```elixir
 {ExDNA.Credo, []}
@@ -172,7 +187,7 @@ And disable the built-in check:
 {Credo.Check.Design.DuplicatedCode, false}
 ```
 
-All ExDNA options are available as check params:
+All ExDNA options are available as check/plugin params:
 
 ```elixir
 {ExDNA.Credo, [
