@@ -4,7 +4,7 @@ defmodule ExDNA.AST.FingerprintTest do
   alias ExDNA.AST.Fingerprint
 
   describe "fragments/4" do
-    test "excludes module attributes by default with excluded_macros: [:@]" do
+    test "excludes ignored attributes (moduledoc, type, spec, etc.)" do
       ast =
         quote do
           defmodule Foo do
@@ -19,7 +19,8 @@ defmodule ExDNA.AST.FingerprintTest do
           end
         end
 
-      frags = Fingerprint.fragments(ast, "test.ex", 3, excluded_macros: [:@])
+      ignored = [:moduledoc, :type, :typep, :spec, :doc, :callback, :impl]
+      frags = Fingerprint.fragments(ast, "test.ex", 3, ignored_attributes: ignored)
 
       attr_frags =
         Enum.filter(frags, fn f -> match?({:@, _, _}, f.ast) end)
@@ -32,6 +33,26 @@ defmodule ExDNA.AST.FingerprintTest do
         end)
 
       assert has_process
+    end
+
+    test "fingerprints non-ignored module attributes" do
+      ast =
+        quote do
+          defmodule Foo do
+            @extensions [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"]
+
+            def process(data), do: data
+          end
+        end
+
+      ignored = [:moduledoc, :type, :spec, :doc]
+      frags = Fingerprint.fragments(ast, "test.ex", 3, ignored_attributes: ignored)
+
+      attr_frags =
+        Enum.filter(frags, fn f -> match?({:@, _, _}, f.ast) end)
+
+      assert length(attr_frags) == 1
+      [{:@, _, [{:extensions, _, _}]}] = Enum.map(attr_frags, & &1.ast)
     end
 
     test "excludes specified macros" do
@@ -71,7 +92,7 @@ defmodule ExDNA.AST.FingerprintTest do
       assert length(schema_frags_without) > length(schema_frags_with)
     end
 
-    test "excluded macros don't prevent child fragments from non-excluded code" do
+    test "ignored attributes don't prevent child fragments from non-excluded code" do
       ast =
         quote do
           defmodule Foo do
@@ -84,7 +105,7 @@ defmodule ExDNA.AST.FingerprintTest do
           end
         end
 
-      frags = Fingerprint.fragments(ast, "test.ex", 3, excluded_macros: [:@])
+      frags = Fingerprint.fragments(ast, "test.ex", 3, ignored_attributes: [:moduledoc])
 
       has_process =
         Enum.any?(frags, fn f ->

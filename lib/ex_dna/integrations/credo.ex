@@ -37,7 +37,7 @@ if Code.ensure_loaded?(Credo.Check) do
         {ExDNA.Credo, [
           min_mass: 40,
           literal_mode: :abstract,
-          excluded_macros: [:@, :schema, :pipe_through],
+          excluded_macros: [:schema, :pipe_through],
           normalize_pipes: true,
           min_similarity: 0.85
         ]}
@@ -52,7 +52,7 @@ if Code.ensure_loaded?(Credo.Check) do
       param_defaults: [
         min_mass: 30,
         literal_mode: :keep,
-        excluded_macros: [:@],
+        excluded_macros: [],
         normalize_pipes: false,
         min_similarity: 1.0
       ],
@@ -184,6 +184,9 @@ if Code.ensure_loaded?(Credo.Check) do
         min_similarity: Params.get(params, :min_similarity, __MODULE__)
       )
     end
+
+    # NOTE: ignored_attributes uses Config defaults and is not exposed
+    # as a Credo param — the defaults cover standard Elixir attributes.
 
     defp build_message(clone, others) do
       type_label =

@@ -9,7 +9,7 @@ defmodule ExDNA.ConfigTest do
       assert config.min_mass == 30
       assert config.min_similarity == 1.0
       assert config.paths == ["lib/"]
-      assert config.excluded_macros == [:@]
+      assert config.excluded_macros == []
       assert config.parse_timeout == 5_000
       assert config.normalize_pipes == false
     end

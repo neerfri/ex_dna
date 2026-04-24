@@ -48,7 +48,8 @@ defmodule ExDNA.Detection.Pipeline do
     Fingerprint.fragments(ast, file, config.min_mass,
       literal_mode: config.literal_mode,
       normalize_pipes: config.normalize_pipes,
-      excluded_macros: config.excluded_macros
+      excluded_macros: config.excluded_macros,
+      ignored_attributes: config.ignored_attributes
     )
   end
 

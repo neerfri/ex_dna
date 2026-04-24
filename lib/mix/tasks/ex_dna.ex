@@ -16,7 +16,10 @@ defmodule Mix.Tasks.ExDna do
     * `--literal-mode` — `keep` (Type-I only) or `abstract` (also Type-II). Default: `keep`
     * `--normalize-pipes` — treat `x |> f()` the same as `f(x)`. Default: false
     * `--exclude-macro` — macro name to skip during analysis (repeatable).
-      `@` is excluded by default. Common: `schema`, `pipe_through`, `plug`
+      Common: `schema`, `pipe_through`, `plug`
+    * `--ignore-attribute` — additional attribute name to ignore (repeatable).
+      Documentation/type attributes (`moduledoc`, `doc`, `type`, `spec`, etc.)
+      are ignored by default. Use this for project-specific noise.
     * `--ignore` — glob pattern to exclude (repeatable)
     * `--format` — output format: `console` (default), `json`, `html`, or `sarif`
     * `--max-clones` — maximum allowed clones. Exits with code 1 only when
@@ -37,6 +40,7 @@ defmodule Mix.Tasks.ExDna do
           literal_mode: :string,
           normalize_pipes: :boolean,
           exclude_macro: :keep,
+          ignore_attribute: :keep,
           ignore: :keep,
           format: :string,
           max_clones: :integer
@@ -86,6 +90,18 @@ defmodule Mix.Tasks.ExDna do
         macros -> Enum.map(macros, &String.to_atom/1)
       end
 
+    extra_ignored =
+      opts
+      |> Keyword.get_values(:ignore_attribute)
+      |> Enum.map(&String.to_atom/1)
+
+    ignored_attributes =
+      if extra_ignored != [] do
+        ExDNA.Config.default(:ignored_attributes) ++ extra_ignored
+      else
+        nil
+      end
+
     [
       paths: if(paths != [], do: paths, else: ["lib/"]),
       reporters: reporters,
@@ -96,6 +112,7 @@ defmodule Mix.Tasks.ExDna do
     |> maybe_put(:min_mass, Keyword.get(opts, :min_mass))
     |> maybe_put(:min_similarity, Keyword.get(opts, :min_similarity))
     |> maybe_put(:excluded_macros, excluded_macros)
+    |> maybe_put(:ignored_attributes, ignored_attributes)
   end
 
   defp reporters_for("json"), do: [ExDNA.Reporter.JSON]

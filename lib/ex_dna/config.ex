@@ -30,7 +30,34 @@ defmodule ExDNA.Config do
     reporters: [ExDNA.Reporter.Console],
     literal_mode: :keep,
     normalize_pipes: false,
-    excluded_macros: [:@],
+    excluded_macros: [],
+    ignored_attributes: [
+      :moduledoc,
+      :doc,
+      :typedoc,
+      :type,
+      :typep,
+      :opaque,
+      :spec,
+      :callback,
+      :macrocallback,
+      :impl,
+      :behaviour,
+      :optional_callbacks,
+      :deprecated,
+      :derive,
+      :enforce_keys,
+      :before_compile,
+      :after_compile,
+      :after_verify,
+      :compile,
+      :dialyzer,
+      :external_resource,
+      :on_load,
+      :on_definition,
+      :vsn,
+      :no_clone
+    ],
     parse_timeout: 5_000
   }
 
@@ -46,6 +73,7 @@ defmodule ExDNA.Config do
           literal_mode: literal_mode(),
           normalize_pipes: boolean(),
           excluded_macros: [atom()],
+          ignored_attributes: [atom()],
           parse_timeout: pos_integer()
         }
 

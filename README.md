@@ -96,7 +96,7 @@ Create `.ex_dna.exs` in your project root:
 %{
   min_mass: 25,
   ignore: ["lib/my_app_web/templates/**"],
-  excluded_macros: [:@, :schema, :pipe_through, :plug],
+  excluded_macros: [:schema, :pipe_through, :plug],
   normalize_pipes: true
 }
 ```
@@ -107,11 +107,22 @@ Create `.ex_dna.exs` in your project root:
 | `min_similarity` | `--min-similarity` | `1.0` | Threshold for Type-III (set < 1.0 to enable) |
 | `literal_mode` | `--literal-mode` | `keep` | `keep` = Type-I only, `abstract` = also Type-II |
 | `normalize_pipes` | `--normalize-pipes` | `false` | Treat `x \|> f()` same as `f(x)` |
-| `excluded_macros` | `--exclude-macro` | `[:@]` | Macro calls to skip entirely |
+| `excluded_macros` | `--exclude-macro` | `[]` | Macro calls to skip entirely |
+| `ignored_attributes` | `--ignore-attribute` | *(see below)* | Module attribute names to skip |
 | `parse_timeout` | — | `5000` | Max ms per file (kills hung parses) |
 | `ignore` | `--ignore` | `[]` | Glob patterns to exclude |
 | — | `--max-clones` | — | Clone budget (exit 1 only above this) |
 | — | `--format` | `console` | `console`, `json`, `html`, or `sarif` |
+
+**Default ignored attributes:** `moduledoc`, `doc`, `typedoc`, `type`, `typep`,
+`opaque`, `spec`, `callback`, `macrocallback`, `impl`, `behaviour`,
+`optional_callbacks`, `deprecated`, `derive`, `enforce_keys`,
+`before_compile`, `after_compile`, `after_verify`, `compile`, `dialyzer`,
+`external_resource`, `on_load`, `on_definition`, `vsn`, `no_clone`.
+
+Custom module attributes like `@extensions`, `@timeout`, or `@fields` **are**
+fingerprinted and will be reported as duplicates when they appear with the
+same value in multiple modules.
 
 ## Suppressing clones
 
@@ -193,7 +204,7 @@ All ExDNA options are available as check/plugin params:
 {ExDNA.Credo, [
   min_mass: 40,
   literal_mode: :abstract,
-  excluded_macros: [:@, :schema, :pipe_through],
+  excluded_macros: [:schema, :pipe_through],
   normalize_pipes: true,
   min_similarity: 0.85
 ]}

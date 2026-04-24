@@ -495,5 +495,70 @@ defmodule ExDNA.Detection.DetectorTest do
 
       assert grouped_clones == []
     end
+
+    test "detects duplicate module attributes across files", %{dir: dir} do
+      write_fixture(dir, "config_a.ex", """
+      defmodule ConfigA do
+        @extensions [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"]
+
+        def process(data), do: data
+      end
+      """)
+
+      write_fixture(dir, "config_b.ex", """
+      defmodule ConfigB do
+        @extensions [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"]
+
+        def transform(data), do: data
+      end
+      """)
+
+      config = Config.new(paths: [dir], min_mass: 3, reporters: [])
+      {clones, _} = Detector.run(config)
+
+      attr_clones =
+        Enum.filter(clones, fn c ->
+          Enum.any?(c.fragments, fn f -> match?({:@, _, [{:extensions, _, _}]}, f.ast) end)
+        end)
+
+      assert length(attr_clones) == 1
+      assert length(hd(attr_clones).fragments) == 2
+    end
+
+    test "ignores documentation attributes but detects custom ones", %{dir: dir} do
+      write_fixture(dir, "doc_a.ex", """
+      defmodule DocA do
+        @moduledoc "Same module doc across files"
+        @custom_config %{timeout: 5000, retries: 3, backoff: :exponential}
+
+        def process(data), do: data
+      end
+      """)
+
+      write_fixture(dir, "doc_b.ex", """
+      defmodule DocB do
+        @moduledoc "Same module doc across files"
+        @custom_config %{timeout: 5000, retries: 3, backoff: :exponential}
+
+        def transform(data), do: data
+      end
+      """)
+
+      config = Config.new(paths: [dir], min_mass: 3, reporters: [])
+      {clones, _} = Detector.run(config)
+
+      moduledoc_clones =
+        Enum.filter(clones, fn c ->
+          Enum.any?(c.fragments, fn f -> match?({:@, _, [{:moduledoc, _, _}]}, f.ast) end)
+        end)
+
+      custom_clones =
+        Enum.filter(clones, fn c ->
+          Enum.any?(c.fragments, fn f -> match?({:@, _, [{:custom_config, _, _}]}, f.ast) end)
+        end)
+
+      assert moduledoc_clones == []
+      assert length(custom_clones) == 1
+    end
   end
 end

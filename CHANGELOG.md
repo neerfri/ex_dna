@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.4.0
+
+### New
+
+- **Module attribute duplicate detection** — Custom module attributes like
+  `@extensions`, `@timeout`, or `@fields` are now fingerprinted and reported
+  when they appear with the same value in multiple modules. Previously all
+  `@` nodes were blanket-excluded.
+- **`ignored_attributes` config** — Fine-grained control over which attribute
+  names to skip. Defaults cover documentation and type-system attributes
+  (`moduledoc`, `doc`, `type`, `spec`, `impl`, `behaviour`, etc. — 26 total).
+  Custom attributes are fingerprinted automatically.
+- **`--ignore-attribute` CLI flag** — Add project-specific attribute names to
+  the ignore list (repeatable, additive to defaults).
+
+### Changed
+
+- **`excluded_macros` default is now `[]`** — Module attributes are no longer
+  excluded via `excluded_macros: [:@]`. Instead, the new `ignored_attributes`
+  list handles attribute filtering with per-name granularity. Projects that
+  explicitly set `excluded_macros: [:@, ...]` in `.ex_dna.exs` can remove `:@`.
+
 ## 1.3.1
 
 ### Fixed
