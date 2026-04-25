@@ -54,7 +54,9 @@ if Code.ensure_loaded?(Credo.Check) do
         literal_mode: :keep,
         excluded_macros: [],
         normalize_pipes: false,
-        min_similarity: 1.0
+        min_similarity: 1.0,
+        paths: ExDNA.Config.default(:paths),
+        ignore: ExDNA.Config.default(:ignore)
       ],
       explanations: [
         check: """
@@ -80,7 +82,9 @@ if Code.ensure_loaded?(Credo.Check) do
             "List of macro names whose bodies are skipped entirely (e.g. `[:schema, :pipe_through]`).",
           normalize_pipes: "When `true`, `x |> f()` and `f(x)` are treated as identical.",
           min_similarity:
-            "Similarity threshold for near-miss clones (0.0–1.0). Values below 1.0 enable Type-III detection."
+            "Similarity threshold for near-miss clones (0.0–1.0). Values below 1.0 enable Type-III detection.",
+          paths: "Files or directories to analyze. Defaults to ExDNA's CLI default: lib/.",
+          ignore: "Glob patterns to exclude from analysis."
         ]
       ]
 
@@ -90,7 +94,7 @@ if Code.ensure_loaded?(Credo.Check) do
         %{
           name: "default",
           checks: %{
-            enabled: [
+            extra: [
               {ExDNA.Credo, []}
             ],
             disabled: [
@@ -113,17 +117,18 @@ if Code.ensure_loaded?(Credo.Check) do
         plugins: [{ExDNA.Credo, [min_mass: 40, literal_mode: :abstract]}]
     """
     def init(exec) do
-      register_default_config(exec, @default_config)
+      register_default_config(exec, default_config(exec))
     end
 
     alias Credo.Execution.ExecutionIssues
     alias ExDNA.Config
-    alias ExDNA.Detection.Detector
+    alias ExDNA.Detection.{Detector, Pipeline}
 
     @doc false
     @impl true
     def run_on_all_source_files(exec, source_files, params) do
       config = build_config(params)
+      source_files = filter_source_files(source_files, config)
       source_file_index = Map.new(source_files, &{&1.filename, &1})
 
       file_ast_pairs =
@@ -181,12 +186,30 @@ if Code.ensure_loaded?(Credo.Check) do
         literal_mode: Params.get(params, :literal_mode, __MODULE__),
         excluded_macros: Params.get(params, :excluded_macros, __MODULE__),
         normalize_pipes: Params.get(params, :normalize_pipes, __MODULE__),
-        min_similarity: Params.get(params, :min_similarity, __MODULE__)
+        min_similarity: Params.get(params, :min_similarity, __MODULE__),
+        paths: Params.get(params, :paths, __MODULE__),
+        ignore: Params.get(params, :ignore, __MODULE__)
       )
     end
 
-    # NOTE: ignored_attributes uses Config defaults and is not exposed
-    # as a Credo param — the defaults cover standard Elixir attributes.
+    defp default_config(exec) do
+      params = Keyword.get(exec.plugins, __MODULE__, [])
+      String.replace(@default_config, "{ExDNA.Credo, []}", "{ExDNA.Credo, #{inspect(params)}}")
+    end
+
+    defp filter_source_files(source_files, %Config{paths: []}), do: source_files
+
+    defp filter_source_files(source_files, config) do
+      included_files =
+        config
+        |> Pipeline.collect_files()
+        |> Enum.map(&Path.expand/1)
+        |> MapSet.new()
+
+      Enum.filter(source_files, fn source_file ->
+        MapSet.member?(included_files, Path.expand(source_file.filename))
+      end)
+    end
 
     defp build_message(clone, others) do
       type_label =

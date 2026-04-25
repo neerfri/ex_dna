@@ -71,8 +71,14 @@ defmodule Mix.Tasks.ExDna do
       end
 
     if should_fail do
-      System.at_exit(fn _ -> exit({:shutdown, 1}) end)
+      Mix.raise(failure_message(total, max_clones))
     end
+  end
+
+  defp failure_message(total, nil), do: "ExDNA found #{total} clone(s)"
+
+  defp failure_message(total, max_clones) do
+    "ExDNA found #{total} clone(s), exceeding the configured budget of #{max_clones}"
   end
 
   defp build_config(opts, paths) do

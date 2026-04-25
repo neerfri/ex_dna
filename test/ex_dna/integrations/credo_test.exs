@@ -50,7 +50,7 @@ defmodule ExDNA.CredoTest do
         to_source_file(@duplicate_a, "a.ex"),
         to_source_file(@duplicate_b, "b.ex")
       ]
-      |> run_check(Check, min_mass: 5)
+      |> run_check(Check, paths: [], min_mass: 5)
 
     assert length(issues) >= 2
 
@@ -69,9 +69,46 @@ defmodule ExDNA.CredoTest do
         to_source_file(@unique_a, "unique_a.ex"),
         to_source_file(@unique_b, "unique_b.ex")
       ]
-      |> run_check(Check, min_mass: 10)
+      |> run_check(Check, paths: [], min_mass: 10)
 
     assert issues == []
+  end
+
+  test "respects ExDNA paths instead of analyzing every Credo source file" do
+    dir = Path.join(System.tmp_dir!(), "ex_dna_credo_test_#{:erlang.unique_integer([:positive])}")
+    lib_dir = Path.join(dir, "lib")
+    test_dir = Path.join(dir, "test")
+    File.mkdir_p!(lib_dir)
+    File.mkdir_p!(test_dir)
+
+    on_exit(fn -> File.rm_rf!(dir) end)
+
+    lib_a = Path.join(lib_dir, "a.ex")
+    lib_b = Path.join(lib_dir, "b.ex")
+    test_a = Path.join(test_dir, "a_test.exs")
+    test_b = Path.join(test_dir, "b_test.exs")
+
+    Enum.each(
+      [
+        {lib_a, @duplicate_a},
+        {lib_b, @duplicate_b},
+        {test_a, @duplicate_a},
+        {test_b, @duplicate_b}
+      ],
+      fn {path, source} -> File.write!(path, source) end
+    )
+
+    issues =
+      [
+        to_source_file(@duplicate_a, lib_a),
+        to_source_file(@duplicate_b, lib_b),
+        to_source_file(@duplicate_a, test_a),
+        to_source_file(@duplicate_b, test_b)
+      ]
+      |> run_check(Check, paths: [lib_dir], min_mass: 5)
+
+    assert issues != []
+    assert Enum.all?(issues, &String.starts_with?(&1.filename, lib_dir))
   end
 
   test "detects renamed-variable clones with literal_mode: :abstract" do
@@ -104,7 +141,7 @@ defmodule ExDNA.CredoTest do
         to_source_file(renamed_a, "c.ex"),
         to_source_file(renamed_b, "d.ex")
       ]
-      |> run_check(Check, min_mass: 5, literal_mode: :abstract)
+      |> run_check(Check, paths: [], min_mass: 5, literal_mode: :abstract)
 
     assert length(issues) >= 2
   end
@@ -139,7 +176,7 @@ defmodule ExDNA.CredoTest do
         to_source_file(schema_a, "schema_a.ex"),
         to_source_file(schema_b, "schema_b.ex")
       ]
-      |> run_check(Check, min_mass: 5, excluded_macros: [:@, :schema])
+      |> run_check(Check, paths: [], min_mass: 5, excluded_macros: [:@, :schema])
 
     schema_issues = Enum.filter(issues, &(&1.message =~ "schema"))
     assert schema_issues == []
@@ -151,7 +188,7 @@ defmodule ExDNA.CredoTest do
         to_source_file(@duplicate_a, "a.ex"),
         to_source_file(@duplicate_b, "b.ex")
       ]
-      |> run_check(Check, min_mass: 5)
+      |> run_check(Check, paths: [], min_mass: 5)
 
     assert Enum.all?(issues, &(&1.message =~ "exact" or &1.message =~ "renamed"))
   end
@@ -179,7 +216,7 @@ defmodule ExDNA.CredoTest do
 
     issues =
       [to_source_file(duplicate, "same_file.ex")]
-      |> run_check(Check, min_mass: 5)
+      |> run_check(Check, paths: [], min_mass: 5)
 
     refute Enum.any?(issues, fn issue ->
              issue.line_no == 0 and String.contains?(issue.message, "also in .")
@@ -209,7 +246,7 @@ defmodule ExDNA.CredoTest do
 
     issues =
       [to_source_file(reduced, "issue_1_reduced.ex")]
-      |> run_check(Check, min_mass: 30, literal_mode: :abstract)
+      |> run_check(Check, paths: [], min_mass: 30, literal_mode: :abstract)
 
     refute Enum.any?(issues, &(&1.line_no == 0))
     refute Enum.any?(issues, &String.contains?(&1.message, "also in ."))

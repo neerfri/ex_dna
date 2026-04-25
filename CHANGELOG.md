@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.1
+
+### Fixed
+
+- **Mix aliases stop when clones are found** — `mix ex_dna` now raises a Mix
+  error instead of deferring exit status until VM shutdown, so aliases halt at
+  the ExDNA step. (#6)
+- **Credo plugin registration and scope** — Plugin params are forwarded to the
+  registered check, the plugin preserves Credo's default checks, and the Credo
+  integration defaults to the same `lib/` scope as `mix ex_dna`. (#7)
+
 ## 1.4.0
 
 ### New

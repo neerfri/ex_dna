@@ -198,10 +198,11 @@ And disable the built-in check:
 {Credo.Check.Design.DuplicatedCode, false}
 ```
 
-All ExDNA options are available as check/plugin params:
+All ExDNA options are available as check/plugin params. By default the Credo check uses the same path scope as `mix ex_dna` (`lib/`); pass `paths: ["lib/", "test/"]` if you want Credo to include test files too.
 
 ```elixir
 {ExDNA.Credo, [
+  paths: ["lib/", "test/"],
   min_mass: 40,
   literal_mode: :abstract,
   excluded_macros: [:schema, :pipe_through],
