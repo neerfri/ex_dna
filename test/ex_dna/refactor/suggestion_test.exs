@@ -92,6 +92,40 @@ defmodule ExDNA.Refactor.SuggestionTest do
       assert site_b.call =~ "world"
     end
 
+    test "skips extraction suggestion when local callee names differ" do
+      ast_a = quote do: cost(order, currency)
+      ast_b = quote do: lookup(order, currency)
+
+      clone = %Clone{
+        type: :type_iii,
+        hash: "x",
+        mass: 10,
+        fragments: [
+          %{file: "a.ex", line: 1, ast: ast_a, mass: 10},
+          %{file: "b.ex", line: 1, ast: ast_b, mass: 10}
+        ]
+      }
+
+      assert Suggestion.suggest(clone) == nil
+    end
+
+    test "skips extraction suggestion when remote callee names differ" do
+      ast_a = quote do: Pricing.cost(order, currency)
+      ast_b = quote do: Pricing.lookup(order, currency)
+
+      clone = %Clone{
+        type: :type_iii,
+        hash: "x",
+        mass: 10,
+        fragments: [
+          %{file: "a.ex", line: 1, ast: ast_a, mass: 10},
+          %{file: "b.ex", line: 1, ast: ast_b, mass: 10}
+        ]
+      }
+
+      assert Suggestion.suggest(clone) == nil
+    end
+
     test "names extracted function based on original def" do
       ast =
         quote do

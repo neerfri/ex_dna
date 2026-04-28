@@ -132,6 +132,52 @@ defmodule ExDNA.Detection.DetectorTest do
       assert clones == []
     end
 
+    test "reports real-world controller clones with differing callees without suggesting extraction",
+         %{
+           dir: dir
+         } do
+      write_fixture(dir, "controllers.ex", """
+      defmodule PermissionController do
+        def update(conn, %{\"id\" => id, \"permission\" => permission_params}) do
+          permission = Permission.get_permission!(id)
+
+          case Permission.update_permission(permission, permission_params) do
+            {:ok, permission} ->
+              conn
+              |> put_flash(:info, \"Permission updated successfully.\")
+              |> redirect(to: Routes.permission_path(conn, :show, permission))
+
+            {:error, %Ecto.Changeset{} = changeset} ->
+              render(conn, \"edit.html\", permission: permission, changeset: changeset)
+          end
+        end
+      end
+
+      defmodule AppController do
+        def update(conn, %{\"id\" => id, \"app\" => app_params}) do
+          app = App.get_app!(id)
+
+          case App.update_app(app, app_params) do
+            {:ok, app} ->
+              conn
+              |> put_flash(:info, \"App updated successfully.\")
+              |> redirect(to: Routes.app_path(conn, :show, app))
+
+            {:error, %Ecto.Changeset{} = changeset} ->
+              render(conn, \"edit.html\", app: app, changeset: changeset)
+          end
+        end
+      end
+      """)
+
+      config = Config.new(paths: [dir], min_mass: 8, min_similarity: 0.85, reporters: [])
+      {clones, _} = Detector.run(config)
+
+      assert Enum.any?(clones, fn clone ->
+               clone.type == :type_iii and clone.suggestion == nil
+             end)
+    end
+
     test "detects duplicates within the same file", %{dir: dir} do
       write_fixture(dir, "same_file.ex", """
       defmodule SameFile do

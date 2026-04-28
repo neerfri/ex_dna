@@ -72,46 +72,50 @@ defmodule ExDNA.Refactor.Suggestion do
 
     {pattern, holes} = AntiUnifier.anti_unify(ast_a, ast_b)
 
-    func_name = generate_name(clone)
-    params = Enum.map(holes, & &1.var)
+    if callee_hole?(pattern, holes) do
+      nil
+    else
+      func_name = generate_name(clone)
+      params = Enum.map(holes, & &1.var)
 
-    body =
-      if params == [] do
-        pattern |> humanize_ast() |> safe_to_string()
-      else
-        pattern |> rename_holes(holes) |> humanize_ast() |> safe_to_string()
-      end
+      body =
+        if params == [] do
+          pattern |> humanize_ast() |> safe_to_string()
+        else
+          pattern |> rename_holes(holes) |> humanize_ast() |> safe_to_string()
+        end
 
-    param_names = Enum.map(holes, fn hole -> hole.var |> rename_hole() end)
+      param_names = Enum.map(holes, fn hole -> hole.var |> rename_hole() end)
 
-    call_sites =
-      frags
-      |> Enum.with_index()
-      |> Enum.map(fn {frag, idx} ->
-        hole_values = extract_hole_values(frag, ast_a, holes, idx)
+      call_sites =
+        frags
+        |> Enum.with_index()
+        |> Enum.map(fn {frag, idx} ->
+          hole_values = extract_hole_values(frag, ast_a, holes, idx)
 
-        args =
-          Enum.map_join(hole_values, ", ", fn value ->
-            value |> humanize_ast() |> safe_to_string()
-          end)
+          args =
+            Enum.map_join(hole_values, ", ", fn value ->
+              value |> humanize_ast() |> safe_to_string()
+            end)
 
-        call =
-          if args == "" do
-            "#{func_name}()"
-          else
-            "#{func_name}(#{args})"
-          end
+          call =
+            if args == "" do
+              "#{func_name}()"
+            else
+              "#{func_name}(#{args})"
+            end
 
-        %{file: frag.file, line: frag.line, call: call}
-      end)
+          %{file: frag.file, line: frag.line, call: call}
+        end)
 
-    %__MODULE__{
-      kind: :extract_function,
-      name: func_name,
-      params: param_names,
-      body: body,
-      call_sites: call_sites
-    }
+      %__MODULE__{
+        kind: :extract_function,
+        name: func_name,
+        params: param_names,
+        body: body,
+        call_sites: call_sites
+      }
+    end
   end
 
   defp generate_name(%Clone{fragments: [frag | _]}) do
@@ -290,6 +294,40 @@ defmodule ExDNA.Refactor.Suggestion do
         other -> other
       end)
     end)
+  end
+
+  defp callee_hole?(_pattern, []), do: false
+
+  defp callee_hole?(pattern, holes) do
+    hole_vars = MapSet.new(holes, & &1.var)
+
+    {_ast, found?} =
+      Macro.prewalk(pattern, false, fn
+        {form, _meta, args} = node, found? when is_list(args) ->
+          {node, found? or contains_hole?(form, hole_vars)}
+
+        node, found? ->
+          {node, found?}
+      end)
+
+    found?
+  end
+
+  defp contains_hole?({var, _meta, nil}, hole_vars) when is_atom(var) do
+    MapSet.member?(hole_vars, var)
+  end
+
+  defp contains_hole?(ast, hole_vars) do
+    {_ast, found?} =
+      Macro.prewalk(ast, false, fn
+        {var, _meta, nil} = node, found? when is_atom(var) ->
+          {node, found? or MapSet.member?(hole_vars, var)}
+
+        node, found? ->
+          {node, found?}
+      end)
+
+    found?
   end
 
   defp rename_hole(var) do
