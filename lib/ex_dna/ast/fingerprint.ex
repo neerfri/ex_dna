@@ -46,7 +46,15 @@ defmodule ExDNA.AST.Fingerprint do
   end
 
   # __block__ — walk children, track per-child sub-hashes for window construction
-  defp walk({:__block__, _meta, args} = node, file, min_mass, norm_opts, excluded, ignored_attrs, acc)
+  defp walk(
+         {:__block__, _meta, args} = node,
+         file,
+         min_mass,
+         norm_opts,
+         excluded,
+         ignored_attrs,
+         acc
+       )
        when is_list(args) do
     {acc, per_child_subs, all_subs} =
       Enum.reduce(args, {acc, [], MapSet.new()}, fn child, {a, per_child, all} ->
@@ -58,7 +66,16 @@ defmodule ExDNA.AST.Fingerprint do
 
     acc =
       if module_body?(args) do
-        sibling_windows(args, per_child_subs, file, min_mass, norm_opts, excluded, ignored_attrs, acc)
+        sibling_windows(
+          args,
+          per_child_subs,
+          file,
+          min_mass,
+          norm_opts,
+          excluded,
+          ignored_attrs,
+          acc
+        )
       else
         acc
       end
@@ -67,7 +84,15 @@ defmodule ExDNA.AST.Fingerprint do
   end
 
   # Module attribute (@attr value) — skip ignored attributes, fingerprint the rest
-  defp walk({:@, _meta, [{attr_name, _, _}]} = node, file, min_mass, norm_opts, excluded, ignored_attrs, acc)
+  defp walk(
+         {:@, _meta, [{attr_name, _, _}]} = node,
+         file,
+         min_mass,
+         norm_opts,
+         excluded,
+         ignored_attrs,
+         acc
+       )
        when is_atom(attr_name) do
     if MapSet.member?(ignored_attrs, attr_name) do
       {node, acc, MapSet.new()}
@@ -100,8 +125,17 @@ defmodule ExDNA.AST.Fingerprint do
   defp walk(leaf, _file, _min_mass, _norm_opts, _excluded, _ignored_attrs, acc),
     do: {leaf, acc, MapSet.new()}
 
-  defp do_walk_call({form, _meta, args} = node, file, min_mass, norm_opts, excluded, ignored_attrs, acc) do
-    {acc, child_subs} = walk_children(args, file, min_mass, norm_opts, excluded, ignored_attrs, acc)
+  defp do_walk_call(
+         {form, _meta, args} = node,
+         file,
+         min_mass,
+         norm_opts,
+         excluded,
+         ignored_attrs,
+         acc
+       ) do
+    {acc, child_subs} =
+      walk_children(args, file, min_mass, norm_opts, excluded, ignored_attrs, acc)
 
     mass = mass(node)
 
@@ -154,11 +188,29 @@ defmodule ExDNA.AST.Fingerprint do
     end)
   end
 
-  defp sibling_windows(children, _per_child_subs, _file, _min_mass, _norm_opts, _excluded, _ignored_attrs, acc)
+  defp sibling_windows(
+         children,
+         _per_child_subs,
+         _file,
+         _min_mass,
+         _norm_opts,
+         _excluded,
+         _ignored_attrs,
+         acc
+       )
        when length(children) < 2,
        do: acc
 
-  defp sibling_windows(children, per_child_subs, file, min_mass, norm_opts, excluded, ignored_attrs, acc) do
+  defp sibling_windows(
+         children,
+         per_child_subs,
+         file,
+         min_mass,
+         norm_opts,
+         excluded,
+         ignored_attrs,
+         acc
+       ) do
     children_with_subs =
       children
       |> Enum.zip(per_child_subs)

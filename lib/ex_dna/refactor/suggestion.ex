@@ -72,50 +72,44 @@ defmodule ExDNA.Refactor.Suggestion do
 
     {pattern, holes} = AntiUnifier.anti_unify(ast_a, ast_b)
 
-    if callee_hole?(pattern, holes) do
-      nil
-    else
-      func_name = generate_name(clone)
-      params = Enum.map(holes, & &1.var)
-
-      body =
-        if params == [] do
-          pattern |> humanize_ast() |> safe_to_string()
-        else
-          pattern |> rename_holes(holes) |> humanize_ast() |> safe_to_string()
-        end
-
-      param_names = Enum.map(holes, fn hole -> hole.var |> rename_hole() end)
-
-      call_sites =
-        frags
-        |> Enum.with_index()
-        |> Enum.map(fn {frag, idx} ->
-          hole_values = extract_hole_values(frag, ast_a, holes, idx)
-
-          args =
-            Enum.map_join(hole_values, ", ", fn value ->
-              value |> humanize_ast() |> safe_to_string()
-            end)
-
-          call =
-            if args == "" do
-              "#{func_name}()"
-            else
-              "#{func_name}(#{args})"
-            end
-
-          %{file: frag.file, line: frag.line, call: call}
-        end)
-
-      %__MODULE__{
-        kind: :extract_function,
-        name: func_name,
-        params: param_names,
-        body: body,
-        call_sites: call_sites
-      }
+    unless callee_hole?(pattern, holes) do
+      build_function_suggestion(clone, pattern, holes, ast_a)
     end
+  end
+
+  defp build_function_suggestion(%Clone{fragments: frags} = clone, pattern, holes, ast_a) do
+    func_name = generate_name(clone)
+
+    %__MODULE__{
+      kind: :extract_function,
+      name: func_name,
+      params: Enum.map(holes, fn hole -> rename_hole(hole.var) end),
+      body: suggestion_body(pattern, holes),
+      call_sites: call_sites(frags, ast_a, holes, func_name)
+    }
+  end
+
+  defp suggestion_body(pattern, []), do: pattern |> humanize_ast() |> safe_to_string()
+
+  defp suggestion_body(pattern, holes) do
+    pattern |> rename_holes(holes) |> humanize_ast() |> safe_to_string()
+  end
+
+  defp call_sites(frags, ast_a, holes, func_name) do
+    frags
+    |> Enum.with_index()
+    |> Enum.map(fn {frag, idx} -> call_site(frag, ast_a, holes, idx, func_name) end)
+  end
+
+  defp call_site(frag, ast_a, holes, idx, func_name) do
+    args =
+      frag
+      |> extract_hole_values(ast_a, holes, idx)
+      |> Enum.map_join(", ", fn value -> value |> humanize_ast() |> safe_to_string() end)
+
+    call = if args == "", do: "#{func_name}()", else: "#{func_name}(#{args})"
+
+    %{file: frag.file, line: frag.line, call: call}
   end
 
   defp generate_name(%Clone{fragments: [frag | _]}) do

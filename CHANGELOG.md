@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.2
+
+### Fixed
+
+- **Crash in extraction suggestions with differing callees** — Near-miss clones
+  that differ in local or remote function names are still reported, but ExDNA no
+  longer tries to generate an invalid extracted-function suggestion for them.
+  This avoids `Code.Formatter`/`Macro.to_string` crashes on Elixir 1.18. (#8)
+
 ## 1.4.1
 
 ### Fixed
