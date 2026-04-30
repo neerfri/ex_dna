@@ -12,7 +12,7 @@ defmodule ExDNA.Reporter.SARIF do
 
   @output_file "ex_dna.sarif"
   @schema_uri "https://json.schemastore.org/sarif-2.1.0.json"
-  @info_uri "https://github.com/dannote/ex_dna"
+  @info_uri "https://github.com/elixir-vibe/ex_dna"
 
   @impl true
   def report(%ExDNA.Report{clones: clones}) do
