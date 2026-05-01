@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.3
+
+### Fixed
+
+- **Config-file ignore patterns in Mix tasks** — `mix ex_dna` and
+  `mix ex_dna.explain` now preserve `:ignore` from `.ex_dna.exs` unless
+  `--ignore` is explicitly provided on the CLI. (#9)
+
 ## 1.4.2
 
 ### Fixed
