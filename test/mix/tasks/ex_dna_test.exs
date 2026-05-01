@@ -37,6 +37,17 @@ defmodule Mix.Tasks.ExDnaTest do
     end)
   end
 
+  test "does not raise when file is ignored in config", %{dir: dir} do
+    write_duplicate_pair(dir)
+
+    capture_io(fn ->
+      File.cd!(dir, fn() ->
+        File.write!(Path.join(dir, ".ex_dna.exs"), ~s/%{ignore: ["b.ex"]}/)
+        assert is_nil(ExDna.run(["--min-mass", "5", dir]))
+      end)
+    end)
+  end
+
   defp write_duplicate_pair(dir) do
     File.write!(Path.join(dir, "a.ex"), duplicate_module("A"))
     File.write!(Path.join(dir, "b.ex"), duplicate_module("B"))
