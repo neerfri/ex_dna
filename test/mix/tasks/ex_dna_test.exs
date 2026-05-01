@@ -43,7 +43,9 @@ defmodule Mix.Tasks.ExDnaTest do
     capture_io(fn ->
       File.cd!(dir, fn() ->
         File.write!(Path.join(dir, ".ex_dna.exs"), ~s/%{ignore: ["b.ex"]}/)
-        assert is_nil(ExDna.run(["--min-mass", "5", dir]))
+        # We need to use File.cwd!() here because this is how ExDna.Config finds the config file
+        # So ignore paths need to be relative to that
+        assert is_nil(ExDna.run(["--min-mass", "5", File.cwd!()]))
       end)
     end)
   end

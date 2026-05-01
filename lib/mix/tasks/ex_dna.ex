@@ -108,13 +108,20 @@ defmodule Mix.Tasks.ExDna do
         nil
       end
 
+    ignored_paths =
+      opts
+      |> Keyword.get_values(:ignore)
+      |> then(fn
+        [] -> nil
+        list -> list
+      end)
     [
       paths: if(paths != [], do: paths, else: ["lib/"]),
       reporters: reporters,
       literal_mode: literal_mode,
       normalize_pipes: Keyword.get(opts, :normalize_pipes, false),
-      ignore: Keyword.get_values(opts, :ignore)
     ]
+    |> maybe_put(:ignore, ignored_paths)
     |> maybe_put(:min_mass, Keyword.get(opts, :min_mass))
     |> maybe_put(:min_similarity, Keyword.get(opts, :min_similarity))
     |> maybe_put(:excluded_macros, excluded_macros)
