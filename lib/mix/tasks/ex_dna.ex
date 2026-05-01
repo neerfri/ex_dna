@@ -30,6 +30,8 @@ defmodule Mix.Tasks.ExDna do
 
   use Mix.Task
 
+  alias ExDNA.CLI.Options
+
   @impl Mix.Task
   def run(argv) do
     {opts, paths, _} =
@@ -108,32 +110,23 @@ defmodule Mix.Tasks.ExDna do
         nil
       end
 
-    ignored_paths =
-      opts
-      |> Keyword.get_values(:ignore)
-      |> then(fn
-        [] -> nil
-        list -> list
-      end)
+    ignored_paths = Options.optional_values(opts, :ignore)
+
     [
       paths: if(paths != [], do: paths, else: ["lib/"]),
       reporters: reporters,
       literal_mode: literal_mode,
-      normalize_pipes: Keyword.get(opts, :normalize_pipes, false),
+      normalize_pipes: Keyword.get(opts, :normalize_pipes, false)
     ]
-    |> maybe_put(:ignore, ignored_paths)
-    |> maybe_put(:min_mass, Keyword.get(opts, :min_mass))
-    |> maybe_put(:min_similarity, Keyword.get(opts, :min_similarity))
-    |> maybe_put(:excluded_macros, excluded_macros)
-    |> maybe_put(:ignored_attributes, ignored_attributes)
+    |> Options.maybe_put(:ignore, ignored_paths)
+    |> Options.maybe_put(:min_mass, Keyword.get(opts, :min_mass))
+    |> Options.maybe_put(:min_similarity, Keyword.get(opts, :min_similarity))
+    |> Options.maybe_put(:excluded_macros, excluded_macros)
+    |> Options.maybe_put(:ignored_attributes, ignored_attributes)
   end
 
   defp reporters_for("json"), do: [ExDNA.Reporter.JSON]
   defp reporters_for("html"), do: [ExDNA.Reporter.HTML]
   defp reporters_for("sarif"), do: [ExDNA.Reporter.SARIF]
   defp reporters_for(_), do: [ExDNA.Reporter.Console]
-
-  defp maybe_put(opts, _key, nil), do: opts
-
-  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 end
