@@ -1,10 +1,11 @@
 defmodule Mix.Tasks.ExDnaTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO
 
   alias Mix.Error
   alias Mix.Tasks.ExDna
+  alias Mix.Tasks.ExDna.Explain
 
   setup do
     dir = Path.join(System.tmp_dir!(), "ex_dna_task_test_#{:erlang.unique_integer([:positive])}")
@@ -35,6 +36,31 @@ defmodule Mix.Tasks.ExDnaTest do
     capture_io(fn ->
       assert is_nil(ExDna.run(["--min-mass", "5", "--max-clones", "10", dir]))
     end)
+  end
+
+  test "does not raise when file is ignored in config", %{dir: dir} do
+    write_duplicate_pair(dir)
+
+    capture_io(fn ->
+      File.cd!(dir, fn ->
+        File.write!(Path.join(dir, ".ex_dna.exs"), ~s/%{ignore: ["b.ex"]}/)
+        assert is_nil(ExDna.run(["--min-mass", "5", File.cwd!()]))
+      end)
+    end)
+  end
+
+  test "explain respects ignored files in config", %{dir: dir} do
+    write_duplicate_pair(dir)
+
+    output =
+      capture_io(fn ->
+        File.cd!(dir, fn ->
+          File.write!(Path.join(dir, ".ex_dna.exs"), ~s/%{ignore: ["b.ex"]}/)
+          Explain.run(["1", "--min-mass", "5"])
+        end)
+      end)
+
+    assert output =~ "Found 0 clones total"
   end
 
   defp write_duplicate_pair(dir) do

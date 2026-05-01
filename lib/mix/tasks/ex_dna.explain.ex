@@ -14,6 +14,7 @@ defmodule Mix.Tasks.ExDna.Explain do
   use Mix.Task
 
   alias ExDNA.AST.{AntiUnifier, Normalizer}
+  alias ExDNA.CLI.Options
 
   @impl Mix.Task
   def run(argv) do
@@ -45,11 +46,11 @@ defmodule Mix.Tasks.ExDna.Explain do
       [
         reporters: [],
         literal_mode: literal_mode,
-        normalize_pipes: Keyword.get(opts, :normalize_pipes, false),
-        ignore: Keyword.get_values(opts, :ignore)
+        normalize_pipes: Keyword.get(opts, :normalize_pipes, false)
       ]
-      |> maybe_put(:min_mass, Keyword.get(opts, :min_mass))
-      |> maybe_put(:min_similarity, Keyword.get(opts, :min_similarity))
+      |> Options.maybe_put(:ignore, Options.optional_values(opts, :ignore))
+      |> Options.maybe_put(:min_mass, Keyword.get(opts, :min_mass))
+      |> Options.maybe_put(:min_similarity, Keyword.get(opts, :min_similarity))
 
     report = ExDNA.analyze(config_opts)
 
@@ -199,7 +200,4 @@ defmodule Mix.Tasks.ExDna.Explain do
   defp format_type(:type_i), do: "exact (Type I)"
   defp format_type(:type_ii), do: "renamed (Type II)"
   defp format_type(:type_iii), do: "near-miss (Type III)"
-
-  defp maybe_put(opts, _key, nil), do: opts
-  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 end
